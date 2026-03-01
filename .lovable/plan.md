@@ -1,44 +1,36 @@
 
 
-## Overview
+## Expand Profile Categories
 
-Redesign Profile and Showroom pages to match the Login page's clean, centered card aesthetic. Remove the token copy functionality since auth is handled entirely through Google/Apple OAuth.
+Final category groups: **You**, **Home**, **Pets**, **Vehicle**, **Garden/Outdoor**
 
-## Design Pattern (from Login page)
+### Database Migration
+Add new enum values to `photo_category`:
+- You: `hands`, `fingers`, `nails`, `hair`, `ears`
+- Home: `living_room`, `kitchen`, `bedroom`, `bathroom`, `office`
+- Pets: `dog`, `cat`
+- Vehicle: `car_interior`, `car_exterior`
+- Garden/Outdoor: `patio`, `garden`, `balcony`
 
-The Login page uses: centered card (`h-[600px] w-[400px]`), `rounded-2xl border`, `bg-background`, spaced sections with `justify-between`, clean typography. The ExtensionLayout already mirrors this shell — the inner content just needs refinement.
+Remove old `lifestyle` value (or keep for backward compat — will check if any data uses it).
 
-## Changes
+### Profile Page Update (`src/pages/Profile.tsx`)
+- Replace the flat 4-category grid with horizontal **Tabs** (You / Home / Pets / Vehicle / Garden)
+- Each tab shows a scrollable 2-column grid of its subcategories as upload slots
+- Keep the same upload/replace/delete UX per slot
+- Tabs use the existing `@radix-ui/react-tabs` component
 
-### 1. Profile page (`src/pages/Profile.tsx`)
-- **Remove** the "Copy Token" button and all token-related code (`copyToken` function, `session` from useAuth, `Copy` icon import)
-- **Restructure layout** to match Login's vertical spacing style:
-  - User avatar + name + email centered at top (like Login's header)
-  - Photo upload grid in the middle section
-  - "Sign Out" as a subtle bottom-aligned link (like Login's footer)
-- Clean, minimal typography matching Login's `text-[28px]`, `text-[14px]`, `text-[11px]` scale
+### Category Map (in code)
+```text
+You:      full_body, upper_body, face, hands, fingers, nails, hair, ears
+Home:     living_room, kitchen, bedroom, bathroom, office
+Pets:     dog, cat
+Vehicle:  car_interior, car_exterior
+Garden:   patio, garden, balcony
+```
 
-### 2. Showroom page (`src/pages/Showroom.tsx`)
-- **Restructure** to match the same vertical rhythm:
-  - Header centered with title + subtitle (matching Login's header style)
-  - Content grid in the middle
-  - Empty state with centered messaging matching Login's aesthetic
-
-### 3. ExtensionLayout (`src/components/ExtensionLayout.tsx`)
-- Keep the outer shell (already matches Login's container)
-- Style the bottom nav tabs to feel more integrated with the minimal design
-
-## Affiliate Integration Answer
-
-For Awin or similar affiliate networks, the easiest approach will be:
-- Store your Awin publisher ID as a backend secret
-- The existing `redirect` edge function already handles affiliate link wrapping — we just need to plug in Awin's redirect URL template (e.g., `https://www.awin1.com/cread.php?awinmid=...&awinaffid=...&ued=TARGET_URL`)
-- When you have your Awin account, share your publisher ID and merchant IDs, and I'll configure the redirect function
-
-## Technical Details
-
-- Remove imports: `Copy` from lucide-react, `session` destructuring from `useAuth`
-- Remove `copyToken` function entirely
-- No database or backend changes needed
-- No new dependencies
+### No Other Changes
+- No backend logic changes — upload flow stays the same
+- No new tables or RLS changes needed
+- Enum expansion is additive and non-breaking
 
