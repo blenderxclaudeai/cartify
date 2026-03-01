@@ -19,9 +19,48 @@ interface TryonResult {
 }
 
 export default function Showroom() {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const [results, setResults] = useState<TryonResult[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Check for pending product data from the Chrome extension content script
+  useEffect(() => {
+    if (!user || !session) return;
+    const isExtension =
+      typeof chrome !== "undefined" &&
+      typeof chrome.storage !== "undefined";
+    if (!isExtension) return;
+
+    chrome.storage.local.get("vto_pending_product", async (stored) => {
+      const product = stored?.vto_pending_product;
+      if (!product) return;
+
+      // Clear immediately so we don't re-process
+      chrome.storage.local.remove("vto_pending_product");
+
+      // Auto-trigger a try-on request
+      try {
+        await fetch(`${SUPABASE_URL}/functions/v1/tryon-request`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          },
+          body: JSON.stringify(product),
+        });
+        // Reload results after the try-on request
+        const { data } = await supabase
+          .from("tryon_requests")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false });
+        setResults(data ?? []);
+      } catch (e) {
+        console.error("VTO: auto try-on failed", e);
+      }
+    });
+  }, [user, session]);
 
   useEffect(() => {
     if (!user) return;
