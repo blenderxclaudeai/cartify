@@ -238,7 +238,7 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "user"
-      photo_category: "full_body" | "face" | "hair" | "hands_wrist"
+      photo_category: "full_body" | "face" | "upper_body" | "lifestyle"
       wallet_status: "pending" | "available" | "paid"
     }
     CompositeTypes: {
@@ -368,7 +368,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "user"],
-      photo_category: ["full_body", "face", "hair", "hands_wrist"],
+      photo_category: ["full_body", "face", "upper_body", "lifestyle"],
       wallet_status: ["pending", "available", "paid"],
     },
   },

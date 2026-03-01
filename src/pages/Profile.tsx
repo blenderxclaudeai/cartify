@@ -4,15 +4,16 @@ import { supabase } from "@/integrations/supabase/client";
 import { ExtensionLayout } from "@/components/ExtensionLayout";
 import { toast } from "@/hooks/use-toast";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { Copy } from "lucide-react";
 
 const CATEGORIES = [
   { key: "full_body" as const, label: "Full Body" },
   { key: "face" as const, label: "Face" },
-  { key: "hair" as const, label: "Upper Body" },
-  { key: "hands_wrist" as const, label: "Lifestyle" },
+  { key: "upper_body" as const, label: "Upper Body" },
+  { key: "lifestyle" as const, label: "Lifestyle" },
 ];
 
-type PhotoCategory = "full_body" | "face" | "hair" | "hands_wrist";
+type PhotoCategory = "full_body" | "face" | "upper_body" | "lifestyle";
 
 interface PhotoRecord {
   id: string;
@@ -22,7 +23,14 @@ interface PhotoRecord {
 }
 
 export default function Profile() {
-  const { user, signOut } = useAuth();
+  const { user, session, signOut } = useAuth();
+
+  const copyToken = () => {
+    if (session?.access_token) {
+      navigator.clipboard.writeText(session.access_token);
+      toast({ title: "Token copied", description: "Paste this in the extension to pair your account." });
+    }
+  };
   const [photos, setPhotos] = useState<PhotoRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState<string | null>(null);
@@ -101,12 +109,21 @@ export default function Profile() {
               <p className="truncate text-[12px] text-muted-foreground">{email}</p>
             </div>
           </div>
-          <button
-            onClick={signOut}
-            className="text-[12px] text-muted-foreground/60 transition-opacity hover:opacity-70"
-          >
-            Sign Out
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={copyToken}
+              className="flex items-center gap-1 rounded-lg bg-secondary px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-secondary/70"
+            >
+              <Copy className="h-3 w-3" />
+              Copy Token
+            </button>
+            <button
+              onClick={signOut}
+              className="text-[12px] text-muted-foreground/60 transition-opacity hover:opacity-70"
+            >
+              Sign Out
+            </button>
+          </div>
         </div>
 
         {/* Section title */}
