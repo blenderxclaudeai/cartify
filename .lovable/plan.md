@@ -1,49 +1,44 @@
 
-# Extension Integration — Status
 
-All gaps have been resolved. Here's the final state:
+## Overview
 
-## ✅ Completed
+Redesign Profile and Showroom pages to match the Login page's clean, centered card aesthetic. Remove the token copy functionality since auth is handled entirely through Google/Apple OAuth.
 
-1. **`handle_new_user` trigger** — already existed on `auth.users`
-2. **Photo category enum** — renamed `hair` → `upper_body`, `hands_wrist` → `lifestyle`
-3. **Storage policies** — RLS policies added for read/upload/update/delete on `profile-photos` bucket, scoped to `{user_id}/` folder
-4. **Token copy on Profile page** — "Copy Token" button added for extension pairing
-5. **Dead code cleanup** — deleted `AppSidebar.tsx`, `AppLayout.tsx`, `Dashboard.tsx`, `WalletPage.tsx`, `Privacy.tsx`
+## Design Pattern (from Login page)
 
-## Extension API Contract
+The Login page uses: centered card (`h-[600px] w-[400px]`), `rounded-2xl border`, `bg-background`, spaced sections with `justify-between`, clean typography. The ExtensionLayout already mirrors this shell — the inner content just needs refinement.
 
-The Chrome Extension should call these endpoints:
+## Changes
 
-### Try-On Request
-```
-POST /functions/v1/tryon-request
-Authorization: Bearer <jwt>
-Body: { pageUrl, imageUrl, title?, price?, retailerDomain? }
-```
+### 1. Profile page (`src/pages/Profile.tsx`)
+- **Remove** the "Copy Token" button and all token-related code (`copyToken` function, `session` from useAuth, `Copy` icon import)
+- **Restructure layout** to match Login's vertical spacing style:
+  - User avatar + name + email centered at top (like Login's header)
+  - Photo upload grid in the middle section
+  - "Sign Out" as a subtle bottom-aligned link (like Login's footer)
+- Clean, minimal typography matching Login's `text-[28px]`, `text-[14px]`, `text-[11px]` scale
 
-### Affiliate Redirect
-```
-GET /functions/v1/redirect?target=<url>&retailerDomain=<domain>&clickRef=<ref>
-Authorization: Bearer <jwt> (optional)
-```
+### 2. Showroom page (`src/pages/Showroom.tsx`)
+- **Restructure** to match the same vertical rhythm:
+  - Header centered with title + subtitle (matching Login's header style)
+  - Content grid in the middle
+  - Empty state with centered messaging matching Login's aesthetic
 
-### Profile Photos (Supabase REST)
-```
-GET /rest/v1/profile_photos?user_id=eq.<user_id>&select=*
-Authorization: Bearer <jwt>
-apikey: <anon_key>
-```
-Then generate signed URLs via storage API.
+### 3. ExtensionLayout (`src/components/ExtensionLayout.tsx`)
+- Keep the outer shell (already matches Login's container)
+- Style the bottom nav tabs to feel more integrated with the minimal design
 
-### Try-On History (Supabase REST)
-```
-GET /rest/v1/tryon_requests?user_id=eq.<user_id>&select=*&order=created_at.desc
-Authorization: Bearer <jwt>
-apikey: <anon_key>
-```
+## Affiliate Integration Answer
 
-## ⚠️ Remaining (non-blocking)
+For Awin or similar affiliate networks, the easiest approach will be:
+- Store your Awin publisher ID as a backend secret
+- The existing `redirect` edge function already handles affiliate link wrapping — we just need to plug in Awin's redirect URL template (e.g., `https://www.awin1.com/cread.php?awinmid=...&awinaffid=...&ued=TARGET_URL`)
+- When you have your Awin account, share your publisher ID and merchant IDs, and I'll configure the redirect function
 
-- `tryon-request` edge function still returns mock results — connect to real AI model when ready
-- CORS is set to `*` — restrict in production
+## Technical Details
+
+- Remove imports: `Copy` from lucide-react, `session` destructuring from `useAuth`
+- Remove `copyToken` function entirely
+- No database or backend changes needed
+- No new dependencies
+
