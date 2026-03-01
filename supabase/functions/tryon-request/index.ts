@@ -10,61 +10,57 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Missing Authorization: Bearer <user_jwt> header" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
-
-    const token = authHeader.replace("Bearer ", "");
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-
-    // Detect if extension is sending anon key instead of user JWT
-    if (token === anonKey) {
-      return new Response(JSON.stringify({ error: "Authorization header must contain a user JWT, not the anon key. Use the token from your Profile page." }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
-
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      anonKey,
-      { global: { headers: { Authorization: authHeader } } }
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+      { global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } } }
     );
 
-    const { data: claimsData, error: claimsErr } = await supabase.auth.getClaims(token);
-    if (claimsErr || !claimsData?.claims) {
-      return new Response(JSON.stringify({ error: "Invalid or expired JWT. Re-copy token from Profile page." }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    // Try to get user from JWT if provided, but don't require it
+    let userId: string | null = null;
+    const authHeader = req.headers.get("Authorization");
+    if (authHeader?.startsWith("Bearer ")) {
+      const token = authHeader.replace("Bearer ", "");
+      const { data } = await supabase.auth.getClaims(token);
+      if (data?.claims?.sub) {
+        userId = data.claims.sub as string;
+      }
     }
-
-    const userId = claimsData.claims.sub as string;
 
     const body = await req.json();
     const { pageUrl, imageUrl, title, price, retailerDomain } = body;
 
     if (!pageUrl || !imageUrl) {
-      return new Response(JSON.stringify({ error: "pageUrl and imageUrl required" }), { status: 400, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "pageUrl and imageUrl required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // Mock result: in production, call actual AI model here
     const resultImageUrl = `https://placehold.co/400x600/7c3aed/white?text=VTO+Try-On`;
 
-    const { data, error } = await supabase.from("tryon_requests").insert({
-      user_id: userId,
-      page_url: pageUrl,
-      image_url: imageUrl,
-      title: title || null,
-      price: price || null,
-      retailer_domain: retailerDomain || null,
-      status: "completed",
-      result_image_url: resultImageUrl,
-    }).select().single();
+    // Only save to DB if we have a user
+    let tryOnId = crypto.randomUUID();
+    if (userId) {
+      const { data, error } = await supabase.from("tryon_requests").insert({
+        user_id: userId,
+        page_url: pageUrl,
+        image_url: imageUrl,
+        title: title || null,
+        price: price || null,
+        retailer_domain: retailerDomain || null,
+        status: "completed",
+        result_image_url: resultImageUrl,
+      }).select().single();
 
-    if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
+      if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      tryOnId = data.id;
+    }
 
     return new Response(JSON.stringify({
-      tryOnId: data.id,
-      status: data.status,
-      resultImageUrl: data.result_image_url,
+      tryOnId,
+      status: "completed",
+      resultImageUrl,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
-    return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
+    return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });
