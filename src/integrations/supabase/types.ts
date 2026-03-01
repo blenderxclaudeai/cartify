@@ -238,7 +238,28 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "user"
-      photo_category: "full_body" | "face" | "upper_body" | "lifestyle"
+      photo_category:
+        | "full_body"
+        | "face"
+        | "upper_body"
+        | "lifestyle"
+        | "hands"
+        | "fingers"
+        | "nails"
+        | "hair"
+        | "ears"
+        | "living_room"
+        | "kitchen"
+        | "bedroom"
+        | "bathroom"
+        | "office"
+        | "dog"
+        | "cat"
+        | "car_interior"
+        | "car_exterior"
+        | "patio"
+        | "garden"
+        | "balcony"
       wallet_status: "pending" | "available" | "paid"
     }
     CompositeTypes: {
@@ -368,7 +389,29 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "user"],
-      photo_category: ["full_body", "face", "upper_body", "lifestyle"],
+      photo_category: [
+        "full_body",
+        "face",
+        "upper_body",
+        "lifestyle",
+        "hands",
+        "fingers",
+        "nails",
+        "hair",
+        "ears",
+        "living_room",
+        "kitchen",
+        "bedroom",
+        "bathroom",
+        "office",
+        "dog",
+        "cat",
+        "car_interior",
+        "car_exterior",
+        "patio",
+        "garden",
+        "balcony",
+      ],
       wallet_status: ["pending", "available", "paid"],
     },
   },
