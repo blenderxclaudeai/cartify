@@ -106,7 +106,7 @@ export function Popup() {
         <button style={s.btnGhost} onClick={handleSignOut}>Sign Out</button>
       </div>
       <div style={{ ...s.divider, margin: "12px 0" }} />
-      <a href={`https://ddsasdkse.lovable.app/showroom`} target="_blank" rel="noopener" style={s.btnPrimary as any}>
+      <a href={`${import.meta.env.VITE_APP_URL || "https://ddsasdkse.lovable.app"}/showroom`} target="_blank" rel="noopener" style={s.btnPrimary as any}>
         Open Showroom ↗
       </a>
       <div style={{ ...s.divider, margin: "12px 0" }} />
