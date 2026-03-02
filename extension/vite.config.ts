@@ -4,7 +4,8 @@ import path from "path";
 import fs from "fs";
 
 export default defineConfig(() => {
-  const distDir = path.resolve(__dirname, "dist");
+  const extensionRoot = __dirname;
+  const distDir = path.resolve(extensionRoot, "dist");
 
   return {
     plugins: [
@@ -17,13 +18,13 @@ export default defineConfig(() => {
           // Build content script (IIFE)
           await build({
             configFile: false,
-            envDir: path.resolve(__dirname, ".."),
+            envDir: path.resolve(extensionRoot, ".."),
             build: {
               outDir: distDir,
               emptyOutDir: false,
               target: "chrome110",
               lib: {
-                entry: path.resolve(__dirname, "src/content/index.ts"),
+                entry: path.resolve(extensionRoot, "src/content/index.ts"),
                 formats: ["iife"],
                 name: "VTOContent",
                 fileName: () => "content.js",
@@ -33,20 +34,20 @@ export default defineConfig(() => {
               },
             },
             resolve: {
-              alias: { "@ext": path.resolve(__dirname, "src") },
+              alias: { "@ext": path.resolve(extensionRoot, "src") },
             },
           });
 
           // Build background service worker (IIFE)
           await build({
             configFile: false,
-            envDir: path.resolve(__dirname, ".."),
+            envDir: path.resolve(extensionRoot, ".."),
             build: {
               outDir: distDir,
               emptyOutDir: false,
               target: "chrome110",
               lib: {
-                entry: path.resolve(__dirname, "src/background/index.ts"),
+                entry: path.resolve(extensionRoot, "src/background/index.ts"),
                 formats: ["iife"],
                 name: "VTOBackground",
                 fileName: () => "background.js",
@@ -56,13 +57,13 @@ export default defineConfig(() => {
               },
             },
             resolve: {
-              alias: { "@ext": path.resolve(__dirname, "src") },
+              alias: { "@ext": path.resolve(extensionRoot, "src") },
             },
           });
 
           // Copy manifest.json into dist
           fs.copyFileSync(
-            path.resolve(__dirname, "manifest.json"),
+            path.resolve(extensionRoot, "manifest.json"),
             path.resolve(distDir, "manifest.json")
           );
 
@@ -77,17 +78,17 @@ export default defineConfig(() => {
     ],
 
     // Popup is the main entry (React app)
-    root: path.resolve(__dirname, "src/popup"),
+    root: extensionRoot,
     base: "./",
-    envDir: path.resolve(__dirname, ".."),
+    envDir: path.resolve(extensionRoot, ".."),
 
     build: {
-      outDir: distDir,
+      outDir: "dist",
       emptyOutDir: true,
       modulePreload: { polyfill: false },
       target: "chrome110",
       rollupOptions: {
-        input: path.resolve(__dirname, "src/popup/index.html"),
+        input: path.resolve(extensionRoot, "src/popup/index.html"),
         output: {
           entryFileNames: "assets/popup-[hash].js",
           chunkFileNames: "assets/[name]-[hash].js",
@@ -97,7 +98,7 @@ export default defineConfig(() => {
     },
 
     resolve: {
-      alias: { "@ext": path.resolve(__dirname, "src") },
+      alias: { "@ext": path.resolve(extensionRoot, "src") },
     },
   };
 });
