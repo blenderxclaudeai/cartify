@@ -1,4 +1,4 @@
-// Background service worker — lightweight fetch to Supabase Edge Function
+// Background service worker — handles auth persistence + try-on requests
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
@@ -15,6 +15,23 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
 
+  // Session sync from web app content script
+  if (msg?.type === "VTO_SESSION_FROM_WEB") {
+    const { access_token, refresh_token, user } = msg.payload;
+    chrome.storage.local.set(
+      {
+        vto_auth_token: access_token,
+        vto_refresh_token: refresh_token,
+        vto_user: user,
+      },
+      () => {
+        sendResponse({ ok: true });
+      }
+    );
+    return true;
+  }
+
+  // Try-on request
   if (msg?.type !== "VTO_TRYON_REQUEST") return;
 
   const { payload } = msg;

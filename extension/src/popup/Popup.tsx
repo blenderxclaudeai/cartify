@@ -1,7 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { supabase } from "@ext/lib/supabase";
 import { signInWithOAuth, signOut, getStoredUser } from "@ext/lib/auth";
-import type { User } from "@supabase/supabase-js";
 
 const APP_URL = import.meta.env.VITE_APP_URL || "https://ddsasdkse.lovable.app";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -91,7 +89,7 @@ export function Popup() {
   const [storedUser, setStoredUser] = useState<StoredUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
-  const [authError, setAuthError] = useState("");
+  const [_authError, _setAuthError] = useState(""); // unused, kept for compat
   const [screen, setScreen] = useState<Screen>("profile");
 
   // Try-on state
@@ -104,92 +102,130 @@ export function Popup() {
   const [uploading, setUploading] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("you");
 
-  // Initialize auth
+  // Initialize auth — check chrome.storage for existing session
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      const u = data.session?.user ?? null;
-      setUser(u);
+    chrome.storage.local.get(["vto_auth_token", "vto_user"], (result) => {
+      if (result.vto_auth_token && result.vto_user) {
+        setStoredUser(result.vto_user);
+        // Set a minimal user object so the popup shows logged-in state
+        setUser({ id: result.vto_user.id } as any);
+      }
       setLoading(false);
-      if (data.session?.access_token) {
-        chrome.storage.local.set({ vto_auth_token: data.session.access_token });
-      }
     });
 
-    getStoredUser().then(setStoredUser);
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_, session) => {
-      setUser(session?.user ?? null);
-      if (session?.access_token) {
-        chrome.storage.local.set({ vto_auth_token: session.access_token });
+    // Listen for session arriving from web app content script
+    const listener = (
+      changes: Record<string, { oldValue?: any; newValue?: any }>,
+      area: string
+    ) => {
+      if (area !== "local") return;
+      if (changes.vto_auth_token?.newValue && changes.vto_user?.newValue) {
+        const u = changes.vto_user.newValue;
+        setStoredUser(u);
+        setUser({ id: u.id } as any);
+        setAuthLoading(false);
       }
-    });
-    return () => subscription.unsubscribe();
+      if (changes.vto_auth_token && !changes.vto_auth_token.newValue) {
+        // Logged out
+        setUser(null);
+        setStoredUser(null);
+      }
+    };
+    chrome.storage.onChanged.addListener(listener);
+    return () => chrome.storage.onChanged.removeListener(listener);
   }, []);
 
-  // Load try-on results when on showroom
+  // Load try-on results when on showroom — use auth token for direct fetch
   useEffect(() => {
-    if (!user || screen !== "showroom") return;
+    if (!storedUser || screen !== "showroom") return;
     setResultsLoading(true);
-    supabase
-      .from("tryon_requests")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .then(({ data }) => {
-        setResults(data ?? []);
-        setResultsLoading(false);
-      });
-  }, [user, screen]);
 
-  // Load profile photos when on profile
+    chrome.storage.local.get("vto_auth_token", async (result) => {
+      const token = result.vto_auth_token;
+      if (!token) { setResultsLoading(false); return; }
+
+      try {
+        const SUPABASE_API_URL = import.meta.env.VITE_SUPABASE_URL as string;
+        const ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+        const res = await fetch(
+          `${SUPABASE_API_URL}/rest/v1/tryon_requests?user_id=eq.${storedUser.id}&order=created_at.desc`,
+          {
+            headers: {
+              apikey: ANON_KEY,
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        const data = await res.json();
+        setResults(Array.isArray(data) ? data : []);
+      } catch {
+        setResults([]);
+      }
+      setResultsLoading(false);
+    });
+  }, [storedUser, screen]);
+
+  // Load profile photos when on profile — use auth token for direct fetch
   useEffect(() => {
-    if (!user || screen !== "profile") return;
+    if (!storedUser || screen !== "profile") return;
     setPhotosLoading(true);
-    supabase
-      .from("profile_photos")
-      .select("*")
-      .eq("user_id", user.id)
-      .then(async ({ data }) => {
-        if (data) {
+
+    chrome.storage.local.get("vto_auth_token", async (result) => {
+      const token = result.vto_auth_token;
+      if (!token) { setPhotosLoading(false); return; }
+
+      try {
+        const SUPABASE_API_URL = import.meta.env.VITE_SUPABASE_URL as string;
+        const ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+        const res = await fetch(
+          `${SUPABASE_API_URL}/rest/v1/profile_photos?user_id=eq.${storedUser.id}`,
+          {
+            headers: {
+              apikey: ANON_KEY,
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          // Generate signed URLs for each photo
           const withUrls = await Promise.all(
             data.map(async (p: any) => {
-              const { data: urlData } = await supabase.storage
-                .from("profile-photos")
-                .createSignedUrl(p.storage_path, 3600);
-              return { ...p, signedUrl: urlData?.signedUrl } as PhotoRecord;
+              const signRes = await fetch(
+                `${SUPABASE_API_URL}/storage/v1/object/sign/profile-photos/${p.storage_path}`,
+                {
+                  method: "POST",
+                  headers: {
+                    apikey: ANON_KEY,
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ expiresIn: 3600 }),
+                }
+              );
+              const signData = await signRes.json();
+              return {
+                ...p,
+                signedUrl: signData?.signedURL
+                  ? `${SUPABASE_API_URL}/storage/v1${signData.signedURL}`
+                  : undefined,
+              } as PhotoRecord;
             })
           );
           setPhotos(withUrls);
         }
-        setPhotosLoading(false);
-      });
-  }, [user, screen]);
+      } catch {
+        setPhotos([]);
+      }
+      setPhotosLoading(false);
+    });
+  }, [storedUser, screen]);
 
   const handleOAuth = async (provider: "google" | "apple") => {
-    setAuthError("");
     setAuthLoading(true);
-    try {
-      const session = await signInWithOAuth(provider);
-      if (session) {
-        setUser(session.user);
-        setStoredUser({
-          id: session.user.id,
-          email: session.user.email || "",
-          name:
-            session.user.user_metadata?.full_name ||
-            session.user.user_metadata?.name ||
-            session.user.email ||
-            "",
-          avatar_url: session.user.user_metadata?.avatar_url,
-        });
-      }
-    } catch (err: any) {
-      setAuthError(err.message || "Sign in failed");
-    } finally {
-      setAuthLoading(false);
-    }
+    // Opens web app login in a new tab — session syncs back via content script
+    await signInWithOAuth(provider);
+    // Popup stays in "Completing sign-in…" state until chrome.storage updates
   };
 
   const handleSignOut = async () => {
@@ -201,49 +237,65 @@ export function Popup() {
   };
 
   const handleUpload = async (category: string, file: File) => {
-    if (!user) return;
+    if (!storedUser) return;
     setUploading(category);
-    const path = `${user.id}/${category}-${Date.now()}`;
 
+    const stored = await chrome.storage.local.get("vto_auth_token");
+    const token = stored.vto_auth_token;
+    if (!token) { setUploading(null); return; }
+
+    const SUPABASE_API_URL = import.meta.env.VITE_SUPABASE_URL as string;
+    const ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+    const filePath = `${storedUser.id}/${category}-${Date.now()}`;
+    const headers = { apikey: ANON_KEY, Authorization: `Bearer ${token}` };
+
+    // Delete existing
     const existing = photos.find((p) => p.category === category);
     if (existing) {
-      await supabase.storage.from("profile-photos").remove([existing.storage_path]);
-      await supabase.from("profile_photos").delete().eq("id", existing.id);
+      await fetch(`${SUPABASE_API_URL}/storage/v1/object/profile-photos/${existing.storage_path}`, {
+        method: "DELETE", headers,
+      });
+      await fetch(`${SUPABASE_API_URL}/rest/v1/profile_photos?id=eq.${existing.id}`, {
+        method: "DELETE", headers,
+      });
     }
 
-    const { error: uploadErr } = await supabase.storage
-      .from("profile-photos")
-      .upload(path, file);
-    if (uploadErr) {
-      setUploading(null);
-      return;
-    }
-
-    await supabase.from("profile_photos").insert({
-      user_id: user.id,
-      category: category as any,
-      storage_path: path,
+    // Upload
+    const uploadRes = await fetch(`${SUPABASE_API_URL}/storage/v1/object/profile-photos/${filePath}`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": file.type },
+      body: file,
     });
-    setUploading(null);
+    if (!uploadRes.ok) { setUploading(null); return; }
 
-    // Reload photos
-    const { data } = await supabase.from("profile_photos").select("*").eq("user_id", user.id);
-    if (data) {
-      const withUrls = await Promise.all(
-        data.map(async (p: any) => {
-          const { data: urlData } = await supabase.storage
-            .from("profile-photos")
-            .createSignedUrl(p.storage_path, 3600);
-          return { ...p, signedUrl: urlData?.signedUrl } as PhotoRecord;
-        })
-      );
-      setPhotos(withUrls);
-    }
+    // Insert record
+    await fetch(`${SUPABASE_API_URL}/rest/v1/profile_photos`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ user_id: storedUser.id, category, storage_path: filePath }),
+    });
+
+    setUploading(null);
+    // Trigger photo reload
+    setPhotosLoading(true);
+    setScreen("profile");
   };
 
   const handleDeletePhoto = async (photo: PhotoRecord) => {
-    await supabase.storage.from("profile-photos").remove([photo.storage_path]);
-    await supabase.from("profile_photos").delete().eq("id", photo.id);
+    const stored = await chrome.storage.local.get("vto_auth_token");
+    const token = stored.vto_auth_token;
+    if (!token) return;
+
+    const SUPABASE_API_URL = import.meta.env.VITE_SUPABASE_URL as string;
+    const ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+    const headers = { apikey: ANON_KEY, Authorization: `Bearer ${token}` };
+
+    await fetch(`${SUPABASE_API_URL}/storage/v1/object/profile-photos/${photo.storage_path}`, {
+      method: "DELETE", headers,
+    });
+    await fetch(`${SUPABASE_API_URL}/rest/v1/profile_photos?id=eq.${photo.id}`, {
+      method: "DELETE", headers,
+    });
     setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
   };
 
@@ -268,25 +320,29 @@ export function Popup() {
 
         {/* OAuth buttons */}
         <div className="space-y-3">
-          {authError && (
-            <p className="text-xs text-center" style={{ color: "hsl(0 72% 51%)" }}>
-              {authError}
-            </p>
+          {authLoading ? (
+            <div className="text-center space-y-2">
+              <p className="text-[14px] font-medium text-foreground">Completing sign-in…</p>
+              <p className="text-[12px] text-muted-foreground">
+                Sign in on the tab that just opened, then come back here.
+              </p>
+            </div>
+          ) : (
+            <>
+              <button
+                onClick={() => handleOAuth("google")}
+                className="w-full rounded-xl bg-foreground py-3.5 text-[14px] font-medium text-background transition-opacity hover:opacity-80"
+              >
+                Continue with Google
+              </button>
+              <button
+                onClick={() => handleOAuth("apple")}
+                className="w-full rounded-xl border border-border bg-background py-3.5 text-[14px] font-medium text-foreground transition-opacity hover:opacity-80"
+              >
+                Continue with Apple
+              </button>
+            </>
           )}
-          <button
-            onClick={() => handleOAuth("google")}
-            disabled={authLoading}
-            className="w-full rounded-xl bg-foreground py-3.5 text-[14px] font-medium text-background transition-opacity hover:opacity-80 disabled:opacity-50"
-          >
-            {authLoading ? "Signing in…" : "Continue with Google"}
-          </button>
-          <button
-            onClick={() => handleOAuth("apple")}
-            disabled={authLoading}
-            className="w-full rounded-xl border border-border bg-background py-3.5 text-[14px] font-medium text-foreground transition-opacity hover:opacity-80 disabled:opacity-50"
-          >
-            Continue with Apple
-          </button>
         </div>
 
         {/* Footer */}
@@ -299,12 +355,10 @@ export function Popup() {
 
   // ── LOGGED IN ──
   const displayName =
-    storedUser?.name ||
-    user.user_metadata?.full_name ||
-    user.user_metadata?.name ||
-    "User";
-  const email = storedUser?.email || user.email || "";
-  const avatarUrl = storedUser?.avatar_url || user.user_metadata?.avatar_url;
+    storedUser?.name || "User";
+  const email = storedUser?.email || "";
+  const avatarUrl = storedUser?.avatar_url;
+  const initial = displayName.charAt(0).toUpperCase();
   const initial = displayName.charAt(0).toUpperCase();
 
   const completedResults = results.filter((r) => r.result_image_url);
