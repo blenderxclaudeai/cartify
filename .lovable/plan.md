@@ -1,65 +1,28 @@
 
 
-## Why "Authorization page could not be loaded"
+## Problem
 
-The error occurs because of how `chrome.identity.launchWebAuthFlow` works. It requires the OAuth provider's redirect URI to match `chrome.identity.getRedirectURL()` — but the **Supabase OAuth flow** redirects to Supabase's own callback (`/auth/v1/callback`) first, which then redirects to the `redirectTo` URL. This intermediate redirect breaks `launchWebAuthFlow` because Supabase's callback page isn't a simple redirect — it's an HTML page that processes tokens.
+The screenshot shows the **deployed** login page at `ddsasdkse.lovable.app/login` has email/password fields, "or" divider, and "Sign Up" link. But the **current code** in `Login.tsx` only has Google and Apple buttons — no email/password form at all.
 
-Additionally, the Lovable Cloud managed OAuth is configured for the **web app domain** (e.g., `ddsasdkse.lovable.app`), not for Chrome extension redirect URIs (`https://<extension-id>.chromiumapp.org/...`). Google's OAuth client won't accept this redirect URI since it's not registered.
+This means the **published site is stale** — it hasn't been re-published since the Login page was updated. The code is correct; it just needs to be deployed.
 
-## The core problem
+Additionally, after completing Google OAuth, the session isn't being detected and the user stays on the login page. The auth logs confirm the Google login succeeds (HTTP 200), so the issue is on the client side — the OAuth return isn't being processed.
 
-`chrome.identity.launchWebAuthFlow` + Supabase OAuth is fundamentally incompatible because:
-1. Supabase's `/auth/v1/callback` is an intermediate HTML page, not a direct redirect
-2. The Lovable Cloud managed Google/Apple OAuth credentials only allow the web app domain as a redirect URI, not `chromiumapp.org`
-3. You cannot register `chromiumapp.org` redirect URIs without your own Google OAuth client credentials
+### Root cause of "nothing happens after login"
 
-## Solution: Use the web app login + token sync
+The `redirect_uri` is set to `window.location.origin` (i.e. `https://ddsasdkse.lovable.app`). After OAuth, the browser returns to `/` which immediately `<Navigate to="/profile" />`. The `ProtectedRoute` checks `user` — but the Supabase session hasn't been processed yet (race condition), so it bounces back to `/login` without the OAuth tokens in the URL anymore.
 
-The only reliable approach for Lovable Cloud OAuth in a Chrome extension is:
+## Plan
 
-1. **Open the web app login page** in a new tab (not `launchWebAuthFlow`)
-2. User completes Google/Apple OAuth on the web app (which works perfectly)
-3. **Sync the session back** to the extension via a messaging mechanism
+### 1. Re-publish the app
+The login page code is already correct (Google + Apple only). It just needs to be published so the deployed site matches.
 
-### Implementation plan
+### 2. Fix OAuth redirect to prevent race condition
+In `Login.tsx`, change `redirect_uri` from `window.location.origin` to `window.location.origin + "/login"`. This ensures the OAuth return lands back on the login page, where `useAuth`'s `onAuthStateChange` can detect the new session and then the existing `if (user) return <Navigate to="/profile" />` kicks in properly.
 
-### 1. Replace `signInWithOAuth` in `extension/src/lib/auth.ts`
-- Remove `chrome.identity.launchWebAuthFlow` entirely
-- `signInWithOAuth()` opens `chrome.tabs.create({ url: APP_URL + "/login" })`
-- Add a **content script listener** on the web app domain that detects successful login and sends the session tokens back to the extension via `chrome.runtime.sendMessage`
-
-### 2. Add a small content script snippet for the web app domain
-- In `extension/src/content/index.ts` (or a separate script), when on the VTO web app domain, check for a Supabase session
-- On detecting a valid session, send `{ type: "VTO_SESSION_FROM_WEB", session }` to the background
-- Background persists it to `chrome.storage.local`
-
-### 3. Background listener in `extension/src/background/index.ts`
-- Listen for `VTO_SESSION_FROM_WEB` messages
-- Persist `access_token`, `refresh_token`, `user` to `chrome.storage.local`
-- This triggers `chrome.storage.onChanged` in the popup, updating UI to logged-in state
-
-### 4. Update Popup UI
-- Logged-out screen: Show "Continue with Google" / "Continue with Apple" buttons
-- On click: open web app login page in new tab, show "Completing sign-in..." state
-- Listen to `chrome.storage.onChanged` for `vto_auth_token` — when it appears, switch to Profile screen
-- Remove the error-prone `authError` display for `launchWebAuthFlow` failures
-
-### 5. Content script on web app domain
-- After successful OAuth on the web app, the content script reads the Supabase session from localStorage
-- Sends it to the background script
-- The login tab can optionally auto-close
-
-### Technical detail
-
-```text
-User clicks "Continue with Google" in popup
-  → chrome.tabs.create({ url: "https://ddsasdkse.lovable.app/login" })
-  → User completes OAuth on web app (works perfectly with managed credentials)
-  → Content script on web app detects session in localStorage
-  → chrome.runtime.sendMessage({ type: "VTO_SESSION_FROM_WEB", ... })
-  → Background persists to chrome.storage.local
-  → Popup detects storage change → shows Profile screen
+```typescript
+redirect_uri: window.location.origin + "/login",
 ```
 
-This approach uses the working web OAuth flow and avoids the `launchWebAuthFlow` incompatibility entirely. The UX is: click button → new tab opens → sign in → tab closes → popup is logged in.
+That single change should fix both issues — the page just needs to be republished.
 
