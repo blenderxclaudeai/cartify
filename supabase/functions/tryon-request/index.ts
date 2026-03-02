@@ -141,6 +141,23 @@ serve(async (req) => {
       });
     }
 
+    // --- Convert product image to base64 ---
+    let productImageDataUrl = imageUrl;
+    try {
+      const productRes = await fetch(imageUrl);
+      if (productRes.ok) {
+        const productContentType = productRes.headers.get("content-type") || "image/jpeg";
+        const productBuf = new Uint8Array(await productRes.arrayBuffer());
+        let productBinary = "";
+        for (let i = 0; i < productBuf.length; i++) productBinary += String.fromCharCode(productBuf[i]);
+        productImageDataUrl = `data:${productContentType};base64,${btoa(productBinary)}`;
+      } else {
+        console.warn("Could not fetch product image, using raw URL. Status:", productRes.status);
+      }
+    } catch (fetchErr) {
+      console.warn("Failed to fetch product image for base64 conversion:", fetchErr);
+    }
+
     // --- AI Virtual Try-On ---
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) {
@@ -168,7 +185,7 @@ serve(async (req) => {
             content: [
               { type: "text", text: promptText },
               { type: "image_url", image_url: { url: userPhotoUrl } },
-              { type: "image_url", image_url: { url: imageUrl } },
+              { type: "image_url", image_url: { url: productImageDataUrl } },
             ],
           }],
         }),
@@ -176,13 +193,36 @@ serve(async (req) => {
 
       if (aiResponse.ok) {
         const aiData = await aiResponse.json();
-        // Primary: images array in message
-        const images = aiData.choices?.[0]?.message?.images;
-        if (images?.[0]?.image_url?.url) {
-          resultImageUrl = images[0].image_url.url;
+        const message = aiData.choices?.[0]?.message;
+
+        // Check 1: images array
+        if (message?.images?.[0]?.image_url?.url) {
+          resultImageUrl = message.images[0].image_url.url;
         }
+
+        // Check 2: content as array with image_url parts
+        if (!resultImageUrl && Array.isArray(message?.content)) {
+          for (const part of message.content) {
+            if (part.type === "image_url" && part.image_url?.url) {
+              resultImageUrl = part.image_url.url;
+              break;
+            }
+          }
+        }
+
+        // Check 3: content as string containing base64 data URI
+        if (!resultImageUrl && typeof message?.content === "string") {
+          const dataUriMatch = message.content.match(/data:image\/[a-zA-Z+]+;base64,[A-Za-z0-9+/=]+/);
+          if (dataUriMatch) {
+            resultImageUrl = dataUriMatch[0];
+          }
+        }
+
         if (!resultImageUrl) {
-          console.error("AI returned no image. Response structure:", JSON.stringify(Object.keys(aiData.choices?.[0]?.message || {})));
+          const contentPreview = typeof message?.content === "string"
+            ? message.content.substring(0, 500)
+            : JSON.stringify(message?.content)?.substring(0, 500);
+          console.error("AI returned no image. Keys:", JSON.stringify(Object.keys(message || {})), "Content preview:", contentPreview);
         }
       } else {
         const errorText = await aiResponse.text();
