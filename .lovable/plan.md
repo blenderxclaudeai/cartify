@@ -1,23 +1,23 @@
-## Extension Status — Updated
 
-### ✅ Fixed
-- **Auth bug**: `getClaims()` now used correctly with proper token extraction
-- **Build script**: `build:extension` added to package.json — builds popup + content.js + background.js
-- **AI try-on**: Integrated Lovable AI (Gemini image generation) — uses user's profile photo + product image to generate realistic try-on composites
-- **Product page detection**: Content script now uses JSON-LD, OpenGraph, microdata, DOM heuristics, and known retailer domains to only show on actual product pages
 
-### ⏳ Remaining
-| Item | Status |
-|------|--------|
-| Configure Awin/Impact affiliate network | Not started — need merchant data in `affiliate_merchants` table |
-| Chrome Web Store assets & privacy policy | Not started |
-| Test AI try-on quality end-to-end | Needs manual testing |
+## Problem
 
-### How the AI try-on works now
-1. User clicks "Try On" on a product page
-2. Content script sends product data → background → popup
-3. Popup calls `tryon-request` edge function
-4. Edge function fetches user's `full_body` profile photo from storage
-5. Sends both images + product title to **Gemini 3 Pro Image Preview** via Lovable AI gateway
-6. Returns generated try-on image to the popup
-7. Falls back to placeholder if AI is unavailable or user has no profile photo
+The manifest declares `"default_popup": "popup.html"` but the Vite popup build outputs the file as `index.html` (Rollup preserves the original filename from `src/popup/index.html`). Chrome cannot find `popup.html` → ERR_FILE_NOT_FOUND.
+
+## Fix
+
+Two small changes:
+
+1. **Rename the popup output to match the manifest.** In `extension/vite.config.ts`, add a post-build step (or Rollup plugin) that renames `dist/index.html` → `dist/popup.html` after the popup build completes. Alternatively, change the manifest to `"default_popup": "index.html"` — but `popup.html` is the clearer convention, so renaming is preferred.
+
+2. **Remove stale root-level files.** Delete the legacy plain-JS files that sit directly in `/extension` and could mislead someone into loading the wrong folder:
+   - `extension/background.js`
+   - `extension/content.js`
+   - `extension/index.html`
+
+   These are old hand-written stubs; the real built files go into `extension/dist/`.
+
+3. **Also remove the duplicate source files** `extension/src/background.ts` and `extension/src/content.ts` which are unused (the real entry points are in `extension/src/background/index.ts` and `extension/src/content/index.ts`).
+
+No other changes needed — the manifest patterns, build pipeline, and source code are otherwise correct.
+
