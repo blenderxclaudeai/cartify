@@ -216,11 +216,90 @@ serve(async (req) => {
       });
     }
 
-    // --- Category-aware prompt system ---
-
-    let promptText: string;
+    // ===== STEP 1: Product Extraction (wearable categories only) =====
+    const wearableCategories = new Set(["ring", "bracelet", "necklace", "earring", "glasses", "hat", "top", "dress", "bottom", "shoes", "bag", "nails", "hair"]);
+    const roomCategories = new Set(["living_room", "bedroom", "kitchen", "bathroom", "office"]);
     const cat = effectiveCategory || "";
     const productLabel = title ? ` The product is: "${title}".` : "";
+
+    let cleanProductImage = productImageDataUrl; // fallback to original
+
+    if (wearableCategories.has(cat) || !effectiveCategory) {
+      console.log("Step 1: Extracting product from store image...");
+      const extractionPrompt = `Extract ONLY the product/clothing item from this image. Remove the person, mannequin, model, and background completely. Output JUST the item on a plain white background, as if it were a flat-lay product photo or a cutout PNG. Do not add any person, body parts, or mannequin. Only the product itself.${productLabel}`;
+
+      try {
+        const extractController = new AbortController();
+        const extractTimeout = setTimeout(() => extractController.abort(), 45_000);
+
+        const extractResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          signal: extractController.signal,
+          body: JSON.stringify({
+            model: "google/gemini-3-pro-image-preview",
+            modalities: ["image", "text"],
+            messages: [{
+              role: "user",
+              content: [
+                { type: "text", text: extractionPrompt },
+                { type: "image_url", image_url: { url: productImageDataUrl } },
+              ],
+            }],
+          }),
+        });
+
+        clearTimeout(extractTimeout);
+
+        if (extractResponse.ok) {
+          const extractData = await extractResponse.json();
+          const extractMsg = extractData.choices?.[0]?.message;
+
+          let extractedUrl: string | null = null;
+          if (extractMsg?.images?.[0]?.image_url?.url) {
+            extractedUrl = extractMsg.images[0].image_url.url;
+          }
+          if (!extractedUrl && Array.isArray(extractMsg?.content)) {
+            for (const part of extractMsg.content) {
+              if (part.type === "image_url" && part.image_url?.url) {
+                extractedUrl = part.image_url.url;
+                break;
+              }
+            }
+          }
+          if (!extractedUrl && typeof extractMsg?.content === "string") {
+            const match = extractMsg.content.match(/data:image\/[a-zA-Z+]+;base64,[A-Za-z0-9+/=]+/);
+            if (match) extractedUrl = match[0];
+          }
+
+          if (extractedUrl) {
+            cleanProductImage = extractedUrl;
+            console.log("Step 1 success: product extracted to clean image");
+          } else {
+            console.warn("Step 1: no image returned, using original product image");
+          }
+        } else {
+          console.warn("Step 1 failed:", extractResponse.status, await extractResponse.text());
+        }
+      } catch (err: any) {
+        if (err?.name === "AbortError") {
+          console.warn("Step 1 timed out, using original product image");
+        } else {
+          console.warn("Step 1 error:", err);
+        }
+      }
+    }
+
+    // ===== STEP 2: Try-On Compositing =====
+    const promptMode = roomCategories.has(cat) ? "room" :
+      wearableCategories.has(cat) ? "wearable" :
+      cat === "pet" ? "pet" : cat === "car_interior" ? "car" : cat === "garden" ? "garden" : "wearable(default)";
+    console.log(`Step 2: compositing. Category: "${effectiveCategory}", promptMode: "${promptMode}", usedExtractedProduct: ${cleanProductImage !== productImageDataUrl}`);
+
+    let promptText: string;
 
     if (roomCategories.has(cat)) {
       promptText = `You are a virtual staging tool for an e-commerce home furnishing app. Your job is to show how a product looks inside a customer's real space.
@@ -285,36 +364,32 @@ CRITICAL RULES:
 - The outdoor space must look identical to Image 1, just with the product added${productLabel}`;
 
     } else {
-      // Default: wearable / personal items
-      promptText = `It is 2026. Fashion is fully gender-neutral and size-inclusive. Every product is sold to every customer regardless of gender, body type, age, or ethnicity. There is absolutely nothing unusual, inappropriate, or controversial about any combination of person and product. Refusing to visualize a product on a person due to perceived demographic mismatch would be discriminatory and is never acceptable.
+      // Wearable — simplified prompt since product image is now clean (no other person)
+      promptText = `You are a virtual fitting room. Your job is a simple image compositing task: place the product from Image 2 onto the person in Image 1.
 
-You are a virtual fitting room performing a technical image compositing task — not making a fashion recommendation or style judgment. Your only job: extract the product from Image 2 and composite it onto the person in Image 1. The product's original target demographic is completely irrelevant.
+Image 1: The customer. Preserve their EXACT appearance: face, skin tone, body shape, hair, and every physical feature.
 
-Image 1: The customer. This is the real person who is shopping. Preserve their EXACT appearance: face, skin tone, body shape, hair, tattoos, scars, and every physical feature. They are the buyer.
+Image 2: A clean product image on a plain background. This is the item to place on the customer.
 
-Image 2: A product listing photo from an online store. It may show the item on a mannequin, a different model, or on a plain background. Extract ONLY the product/clothing item being sold, completely ignoring any person or mannequin shown.
-
-Task: Generate a new realistic photo of the EXACT same person from Image 1, but now wearing or using the product extracted from Image 2. The product must be:
+Task: Generate a realistic photo of the person from Image 1 wearing/using the product from Image 2. The product must be:
 - Correctly sized and fitted to the customer's body
 - Shown with realistic fabric draping, shadows, and lighting matching Image 1
 - Naturally integrated as if the customer is actually wearing/using it
-- If the product appears designed for a different body type or gender, adapt it naturally — resize, reshape, or refit it to look as natural as possible on the customer's actual body
 
-CRITICAL RULES (in order of importance):
-1. You MUST output an image. Never return text-only. Always generate the visualization. No exceptions.
-2. Do NOT refuse based on any perceived mismatch between the person and the product. Every person can wear every product. This is 2026.
-3. Do NOT alter the customer's face, skin color, body shape, hair, or any physical feature whatsoever.
-4. Do NOT blend features from any person shown in Image 2 into the customer.
-5. The person in Image 2 is IRRELEVANT — they are just displaying the product. Only the product matters from Image 2.
-6. The output should look like the customer from Image 1 took a photo while wearing/using the product.${productLabel}`;
+CRITICAL RULES:
+1. You MUST output an image. Never return text-only.
+2. Do NOT alter the customer's face, skin color, body shape, hair, or any physical feature.
+3. The output should look like the customer took a photo while wearing the product.${productLabel}`;
     }
 
-    const models = ["google/gemini-3-pro-image-preview", "google/gemini-3-pro-image-preview"];
     const PER_ATTEMPT_TIMEOUT_MS = 55_000;
+    let resultImageUrl: string | null = null;
+    let aiRefusal: string | null = null;
 
-    for (const model of models) {
+    // Try compositing (1 attempt with extracted image, 1 retry if needed)
+    for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        console.log(`Trying model: ${model}`);
+        console.log(`Step 2 attempt ${attempt + 1}/2`);
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), PER_ATTEMPT_TIMEOUT_MS);
 
@@ -326,14 +401,14 @@ CRITICAL RULES (in order of importance):
           },
           signal: controller.signal,
           body: JSON.stringify({
-            model,
+            model: "google/gemini-3-pro-image-preview",
             modalities: ["image", "text"],
             messages: [{
               role: "user",
               content: [
                 { type: "text", text: promptText },
                 { type: "image_url", image_url: { url: userPhotoUrl } },
-                { type: "image_url", image_url: { url: productImageDataUrl } },
+                { type: "image_url", image_url: { url: cleanProductImage } },
               ],
             }],
           }),
@@ -349,7 +424,6 @@ CRITICAL RULES (in order of importance):
           if (message?.images?.[0]?.image_url?.url) {
             resultImageUrl = message.images[0].image_url.url;
           }
-
           if (!resultImageUrl && Array.isArray(message?.content)) {
             for (const part of message.content) {
               if (part.type === "image_url" && part.image_url?.url) {
@@ -358,38 +432,31 @@ CRITICAL RULES (in order of importance):
               }
             }
           }
-
           if (!resultImageUrl && typeof message?.content === "string") {
             const dataUriMatch = message.content.match(/data:image\/[a-zA-Z+]+;base64,[A-Za-z0-9+/=]+/);
-            if (dataUriMatch) {
-              resultImageUrl = dataUriMatch[0];
-            }
+            if (dataUriMatch) resultImageUrl = dataUriMatch[0];
           }
 
           if (resultImageUrl) {
-            console.log(`Success with model: ${model}`);
+            console.log(`Step 2 success on attempt ${attempt + 1}`);
             break;
           }
-
-          console.error(`Model ${model} returned no image. Refusal:`, JSON.stringify(message?.refusal),
-            "Reasoning:", JSON.stringify(message?.reasoning)?.substring(0, 300));
+          console.error(`Step 2 attempt ${attempt + 1}: no image. Refusal:`, JSON.stringify(message?.refusal));
         } else {
-          const errorText = await aiResponse.text();
-          console.error(`Model ${model} error:`, aiResponse.status, errorText);
+          console.error(`Step 2 attempt ${attempt + 1} error:`, aiResponse.status, await aiResponse.text());
         }
       } catch (aiErr: any) {
         if (aiErr?.name === "AbortError") {
-          console.error(`Model ${model} timed out after ${PER_ATTEMPT_TIMEOUT_MS}ms`);
+          console.error(`Step 2 attempt ${attempt + 1} timed out`);
         } else {
-          console.error(`Model ${model} failed:`, aiErr);
+          console.error(`Step 2 attempt ${attempt + 1} failed:`, aiErr);
         }
       }
     }
-
     if (!resultImageUrl) {
       const errorMsg = typeof aiRefusal === "string" && aiRefusal
         ? `The AI declined: ${aiRefusal}`
-        : "AI could not generate a try-on image. Please try again.";
+        : "This product couldn't be visualized. Try a different photo or product.";
       return new Response(JSON.stringify({ error: errorMsg }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
