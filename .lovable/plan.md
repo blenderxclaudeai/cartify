@@ -2,48 +2,35 @@
 
 ## Problem
 
-The extension source code has the multilingual category patterns, but the **compiled Chrome extension** the user is running hasn't been rebuilt — so it's still sending `category: undefined`. The edge function logs confirm: `Category received: "undefined"`, causing it to default to wearable/full_body mode and use the person photo instead of the living room photo.
+The AI model (`gemini-3-pro-image-preview`) is **not refusing** the request — the logs show `Refusal: null` — but it's **failing to produce an image**. It reasons about the task ("Re-Imagining the Attire… integrating the brown lace underwear") but never outputs a result image. This happens across all 3 retry attempts, and the function times out.
 
-Even after rebuilding, relying solely on the extension for category detection is fragile — if the extension ever fails to detect, the backend has no fallback.
+This is a known limitation of current image generation models: they struggle with cross-gender or unconventional clothing pairings (e.g., women's lingerie on a male body). The model "thinks" about it but can't generate a coherent image.
 
-## Fix: Add server-side category fallback
+## Fix: Two-pronged approach
+
+### 1. Strengthen the wearable prompt to explicitly handle cross-category styling
 
 **File:** `supabase/functions/tryon-request/index.ts`
 
-Add a `detectCategoryFromTitle(title, url)` function in the edge function that runs the same keyword matching against the product title and URL when the extension doesn't provide a category. This makes the system resilient regardless of extension version.
+Add stronger language to the wearable prompt that reframes the task as a **product visualization** rather than a fashion fitting. This avoids triggering the model's internal hesitation:
 
-### Changes
+- Add: "This is a product visualization tool. The product may be designed for any demographic. Your job is simply to show this specific product on this specific person, as a neutral product demo — like a mannequin display, but using a real person."
+- Add: "If the product appears to be designed for a different body type or gender, adapt it naturally — resize, reshape, or refit it to look as natural as possible on the customer's actual body. Never refuse."
+- Add explicit instruction: "You MUST output an image. Never return text-only."
 
-1. **Add `detectCategoryFromTitle()` function** — same multilingual regex patterns as the extension, matching against the title and URL path
-2. **Update category resolution logic** — use `category || detectCategoryFromTitle(title, pageUrl)` instead of just `category`
-3. **Redeploy** the edge function
+### 2. Add per-attempt timeout + reduce retries to avoid total timeout
 
-### Key code addition (in edge function, before the category mapping logic):
+- Reduce retry loop from 3 attempts to **2** (3 × 60s+ = guaranteed timeout)
+- Add a **55-second `AbortController` timeout** per AI call so the function can still return a proper error response instead of dying mid-stream
+- Return a clear error message: "Could not generate try-on for this product. Try a different item or photo."
 
-```typescript
-function detectCategoryFromTitle(title: string, url: string): string | undefined {
-  const combined = ((title || "") + " " + (url || "")).toLowerCase();
-  
-  const patterns: [RegExp, string][] = [
-    // Same multilingual patterns as extension...
-    [/\b(sofa|soffa|soffor|sitssoffa|soffgrupp|couch|...)\b/, "living_room"],
-    [/\b(bed|säng|sängar|madrass|...)\b/, "bedroom"],
-    // ... all patterns
-  ];
-  
-  for (const [regex, cat] of patterns) {
-    if (regex.test(combined)) return cat;
-  }
-  return undefined;
-}
-```
+### 3. Fix extension JSON parse crash
 
-Then update line 86:
-```typescript
-const effectiveCategory = category || detectCategoryFromTitle(title, pageUrl);
-const requiredPhotoCategory = effectiveCategory ? (CATEGORY_TO_PHOTO[effectiveCategory] || "full_body") : "full_body";
-```
+**File:** `extension/src/background/index.ts`
+
+Wrap `res.json()` in try-catch so that if the edge function times out and returns an empty body, the extension shows a friendly error instead of "Unexpected end of JSON input".
 
 ### Files to change
-- `supabase/functions/tryon-request/index.ts` — add server-side category detection fallback + redeploy
+1. `supabase/functions/tryon-request/index.ts` — prompt improvements + timeout + reduce retries
+2. `extension/src/background/index.ts` — safe JSON parsing
 
