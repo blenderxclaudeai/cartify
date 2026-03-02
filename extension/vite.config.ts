@@ -38,6 +38,29 @@ export default defineConfig(() => {
             },
           });
 
+          // Build web app sync content script (IIFE)
+          await build({
+            configFile: false,
+            envDir: path.resolve(extensionRoot, ".."),
+            build: {
+              outDir: distDir,
+              emptyOutDir: false,
+              target: "chrome110",
+              lib: {
+                entry: path.resolve(extensionRoot, "src/content/webAppSync.ts"),
+                formats: ["iife"],
+                name: "VTOWebAppSync",
+                fileName: () => "webAppSync.js",
+              },
+              rollupOptions: {
+                output: { inlineDynamicImports: true },
+              },
+            },
+            resolve: {
+              alias: { "@ext": path.resolve(extensionRoot, "src") },
+            },
+          });
+
           // Build background service worker (IIFE)
           await build({
             configFile: false,

@@ -1,100 +1,17 @@
-import { supabase, SUPABASE_URL } from "./supabase";
-
 /**
- * Launch OAuth via chrome.identity.launchWebAuthFlow.
- * Uses PKCE code exchange for secure token retrieval.
+ * Extension auth — opens the web app login page in a new tab.
+ * A content script on the web app domain detects the session and
+ * sends it back to the extension background, which persists it.
  */
-export async function signInWithOAuth(provider: "google" | "apple") {
-  const redirectUrl = chrome.identity.getRedirectURL("supabase");
 
-  // Generate OAuth URL with PKCE — skipBrowserRedirect prevents auto-navigation
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider,
-    options: {
-      skipBrowserRedirect: true,
-      redirectTo: redirectUrl,
-    },
-  });
+const APP_URL = "https://ddsasdkse.lovable.app";
 
-  if (error || !data.url) {
-    throw error || new Error("No OAuth URL returned");
-  }
-
-  // Open the OAuth consent screen in a Chrome-managed popup window
-  const resultUrl = await new Promise<string>((resolve, reject) => {
-    chrome.identity.launchWebAuthFlow(
-      { url: data.url, interactive: true },
-      (responseUrl) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
-        } else if (!responseUrl) {
-          reject(new Error("No response URL from auth flow"));
-        } else {
-          resolve(responseUrl);
-        }
-      }
-    );
-  });
-
-  // Try PKCE code exchange first (modern Supabase default)
-  const url = new URL(resultUrl);
-  const code = url.searchParams.get("code");
-
-  if (code) {
-    const { data: sessionData, error: sessionError } =
-      await supabase.auth.exchangeCodeForSession(code);
-    if (sessionError) throw sessionError;
-    if (sessionData.session) {
-      await persistSession(sessionData.session);
-      return sessionData.session;
-    }
-    throw new Error("No session returned from code exchange");
-  }
-
-  // Fallback: parse tokens from hash fragment (implicit flow)
-  const hashParams = new URLSearchParams(
-    resultUrl.includes("#") ? resultUrl.split("#")[1] : ""
-  );
-  const access_token = hashParams.get("access_token");
-  const refresh_token = hashParams.get("refresh_token");
-
-  if (!access_token || !refresh_token) {
-    throw new Error("No auth code or tokens found in OAuth response");
-  }
-
-  const { data: sessionData, error: sessionError } =
-    await supabase.auth.setSession({ access_token, refresh_token });
-  if (sessionError) throw sessionError;
-  if (sessionData.session) {
-    await persistSession(sessionData.session);
-    return sessionData.session;
-  }
-
-  throw new Error("Failed to establish session");
-}
-
-async function persistSession(session: {
-  access_token: string;
-  refresh_token: string;
-  user: {
-    id: string;
-    email?: string;
-    user_metadata?: Record<string, any>;
-  };
-}) {
-  await chrome.storage.local.set({
-    vto_auth_token: session.access_token,
-    vto_refresh_token: session.refresh_token,
-    vto_user: {
-      id: session.user.id,
-      email: session.user.email,
-      name:
-        session.user.user_metadata?.full_name ||
-        session.user.user_metadata?.name ||
-        session.user.email,
-      avatar_url: session.user.user_metadata?.avatar_url,
-    },
-  });
+export async function signInWithOAuth(_provider: "google" | "apple") {
+  // Open the web app login page — OAuth happens there with managed credentials
+  chrome.tabs.create({ url: `${APP_URL}/login`, active: true });
+  // The popup shows a "Completing sign-in…" state.
+  // The web-app content script will detect the session and message the background.
+  // Background persists to chrome.storage.local → popup detects via onChanged.
 }
 
 export async function getStoredUser(): Promise<{
@@ -121,7 +38,6 @@ export async function isLoggedIn(): Promise<boolean> {
 }
 
 export async function signOut() {
-  await supabase.auth.signOut();
   await chrome.storage.local.remove([
     "vto_auth_token",
     "vto_refresh_token",
