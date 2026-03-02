@@ -1,5 +1,42 @@
-// Virtual Try-On Edge Function
+// Virtual Try-On Edge Function — server-side category fallback
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+
+/** Server-side category detection from product title + URL (fallback when extension doesn't provide one) */
+function detectCategoryFromTitle(title: string, url: string): string | undefined {
+  const combined = ((title || "") + " " + (url || "")).toLowerCase();
+
+  const patterns: [RegExp, string][] = [
+    [/\b(ring|rings|engagement ring|wedding band|ringar|förlovningsring)\b/, "ring"],
+    [/\b(bracelet|bangle|wristband|watch|watches|armband|klocka|montre|reloj|Uhr|Armband)\b/, "bracelet"],
+    [/\b(necklace|pendant|chain|choker|halsband|collier|Halskette|Kette|collar)\b/, "necklace"],
+    [/\b(earring|earrings|studs|hoops|örhängen|örhänge|boucles d'oreilles|Ohrringe|pendientes)\b/, "earring"],
+    [/\b(nail polish|nail art|manicure|press.on nails|nagellack|naglar)\b/, "nails"],
+    [/\b(glasses|sunglasses|eyeglasses|eyewear|frames|glasögon|solglasögon|lunettes|Brille|Sonnenbrille|gafas)\b/, "glasses"],
+    [/\b(hat|cap|beanie|headband|headwear|mössa|hatt|keps|chapeau|Mütze|Hut|sombrero|gorro)\b/, "hat"],
+    [/\b(hair|wig|hair extension|hair clip|hairpin|peruk|hårförlängning)\b/, "hair"],
+    [/\b(underwear|boxers|briefs|lingerie|panties|bra|underkläder|kalsonger|trosor|bh|sous-vêtements|Unterwäsche)\b/, "bottom"],
+    [/\b(swimwear|bikini|swim trunks|badkläder|baddräkt|Badeanzug|Badehose)\b/, "bottom"],
+    [/\b(shirt|blouse|top|t.shirt|tee|hoodie|sweater|jacket|coat|blazer|vest|tröja|jacka|kappa|skjorta|blus|väst|chemise|veste|manteau|Hemd|Jacke|Mantel|camisa|chaqueta|abrigo)\b/, "top"],
+    [/\b(dress|gown|romper|jumpsuit|klänning|robe|Kleid|vestido)\b/, "dress"],
+    [/\b(pants|trousers|jeans|shorts|skirt|leggings|byxor|kjol|pantalon|jupe|Hose|Rock|pantalones|falda)\b/, "bottom"],
+    [/\b(shoe|shoes|sneakers|boots|sandals|heels|loafers|footwear|skor|stövlar|sandaler|chaussures|bottes|Schuhe|Stiefel|zapatos|botas)\b/, "shoes"],
+    [/\b(socks|stockings|strumpor|sockor|chaussettes|Socken|calcetines)\b/, "shoes"],
+    [/\b(bag|handbag|purse|backpack|tote|clutch|väska|ryggsäck|sac|Tasche|Rucksack|bolso|mochila)\b/, "bag"],
+    [/\b(sofa|soffa|soffor|sitssoffa|soffgrupp|couch|armchair|fåtölj|fåtöljer|coffee table|soffbord|side table|sidobord|lamp|lampa|rug|matta|carpet|curtain|gardin|pillow|kudde|cushion|canapé|fauteuil|tapis|rideau|coussin|divano|poltrona|tappeto|Sofa|Couch|Sessel|Couchtisch|Teppich|Kissen|Vorhang|Lampe|sofá|sillón|alfombra|cortina|cojín|lámpara)\b/i, "living_room"],
+    [/\b(bed|beds|mattress|bedding|nightstand|duvet|comforter|säng|sängar|madrass|sängbord|påslakan|täcke|bäddset|lit|matelas|couette|table de nuit|Bett|Matratze|Bettdecke|Nachttisch|cama|colchón|edredón|mesita de noche)\b/, "bedroom"],
+    [/\b(kitchen|cookware|dinnerware|mug|cup|plate|bowl|kök|köksredskap|mugg|kopp|tallrik|skål|cuisine|casserole|vaisselle|tasse|assiette|bol|Küche|Geschirr|Tasse|Teller|Schüssel|cocina|vajilla|taza|plato|cuenco)\b/, "kitchen"],
+    [/\b(bathroom|towel|shower|bath mat|badrum|handduk|dusch|badmatta|salle de bain|serviette|douche|Badezimmer|Handtuch|Dusche|baño|toalla|ducha)\b/, "bathroom"],
+    [/\b(desk|office chair|monitor stand|bookshelf|skrivbord|kontorsstol|bokhylla|bureau|chaise de bureau|étagère|Schreibtisch|Bürostuhl|Regal|escritorio|silla de oficina|estantería)\b/, "office"],
+    [/\b(dog collar|dog bed|dog toy|cat toy|cat bed|pet|hundleksak|hundbädd|kattleksak|kattbädd|husdjur)\b/, "pet"],
+    [/\b(car seat cover|car mat|steering wheel|car accessory|bilklädsel|bilmatta|ratt|biltillbehör)\b/, "car_interior"],
+    [/\b(patio|garden|outdoor furniture|planter|flower pot|trädgård|utomhus|utomhusmöbler|kruka|balkong|jardin|terrasse|Garten|Terrasse|jardín)\b/, "garden"],
+  ];
+
+  for (const [regex, cat] of patterns) {
+    if (regex.test(combined)) return cat;
+  }
+  return undefined;
+}
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -82,16 +119,17 @@ serve(async (req) => {
       });
     }
 
-    // Determine required photo category
-    const requiredPhotoCategory = category ? (CATEGORY_TO_PHOTO[category] || "full_body") : "full_body";
+    // Determine effective category — use extension value, or fall back to server-side detection
+    const effectiveCategory = (category && category !== "undefined") ? category : detectCategoryFromTitle(title || "", pageUrl || "");
+    const requiredPhotoCategory = effectiveCategory ? (CATEGORY_TO_PHOTO[effectiveCategory] || "full_body") : "full_body";
 
     // Debug logging for category diagnosis
     const wearableCategories = new Set(["ring", "bracelet", "necklace", "earring", "glasses", "hat", "top", "dress", "bottom", "shoes", "bag", "nails", "hair"]);
     const roomCategories = new Set(["living_room", "bedroom", "kitchen", "bathroom", "office"]);
-    const promptMode = roomCategories.has(category || "") ? "room" :
-      wearableCategories.has(category || "") ? "wearable" :
-      category === "pet" ? "pet" : category === "car_interior" ? "car" : category === "garden" ? "garden" : "wearable(default)";
-    console.log(`Category received: "${category}", requiredPhoto: "${requiredPhotoCategory}", promptMode: "${promptMode}"`);
+    const promptMode = roomCategories.has(effectiveCategory || "") ? "room" :
+      wearableCategories.has(effectiveCategory || "") ? "wearable" :
+      effectiveCategory === "pet" ? "pet" : effectiveCategory === "car_interior" ? "car" : effectiveCategory === "garden" ? "garden" : "wearable(default)";
+    console.log(`Category from extension: "${category}", detected server-side: "${detectCategoryFromTitle(title || "", pageUrl || "")}", effective: "${effectiveCategory}", requiredPhoto: "${requiredPhotoCategory}", promptMode: "${promptMode}"`);
 
     let resultImageUrl: string | null = null;
     let userPhotoUrl: string | null = null;
@@ -181,7 +219,7 @@ serve(async (req) => {
     // --- Category-aware prompt system ---
 
     let promptText: string;
-    const cat = category || "";
+    const cat = effectiveCategory || "";
     const productLabel = title ? ` The product is: "${title}".` : "";
 
     if (roomCategories.has(cat)) {
