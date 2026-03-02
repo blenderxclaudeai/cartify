@@ -2,19 +2,6 @@ import React, { useEffect, useState } from "react";
 import { supabase } from "@ext/lib/supabase";
 import type { User } from "@supabase/supabase-js";
 
-const c = {
-  bg: "#ffffff",
-  bgCard: "#fafafa",
-  fg: "#171717",
-  fgMuted: "#737373",
-  fgDim: "#a3a3a3",
-  border: "#e5e5e5",
-  primary: "#171717",
-  primaryFg: "#ffffff",
-  danger: "#dc2626",
-  accent: "#22c55e",
-};
-
 export function Popup() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -70,65 +57,126 @@ export function Popup() {
     chrome.storage.local.remove(["vto_auth_token"]);
   };
 
-  if (loading) return <div style={s.container}><p style={{ color: c.fgMuted }}>Loading…</p></div>;
+  if (loading) {
+    return (
+      <div className="w-[380px] min-h-[420px] p-5 flex items-center justify-center">
+        <p className="text-muted-foreground text-sm">Loading…</p>
+      </div>
+    );
+  }
 
   if (!user) {
     return (
-      <div style={s.container}>
-        <div style={s.logoRow}>
-          <span style={s.logo}>VTO</span>
-          <span style={s.version}>v1.0</span>
+      <div className="w-[380px] min-h-[420px] p-5 flex flex-col">
+        {/* Logo */}
+        <div className="flex items-baseline gap-1.5 mb-0.5">
+          <span className="text-xl font-bold tracking-tight">VTO</span>
+          <span className="text-[11px] text-muted-foreground font-medium">v1.0</span>
         </div>
-        <p style={{ ...s.subtitle, marginBottom: 16 }}>Virtual Try-On</p>
-        <form onSubmit={handleAuth} style={s.form}>
-          <input style={s.input} type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required />
-          <input style={s.input} type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required />
-          {authError && <p style={s.error}>{authError}</p>}
-          <button style={s.btnPrimary} type="submit">
+        <p className="text-xs text-muted-foreground mb-4">Virtual Try-On</p>
+
+        {/* Auth form */}
+        <form onSubmit={handleAuth} className="flex flex-col gap-2">
+          <input
+            className="px-3 py-2.5 rounded-lg border border-border bg-background text-foreground text-sm outline-none focus:ring-2 focus:ring-ring/20 transition-shadow"
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            required
+          />
+          <input
+            className="px-3 py-2.5 rounded-lg border border-border bg-background text-foreground text-sm outline-none focus:ring-2 focus:ring-ring/20 transition-shadow"
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            required
+          />
+          {authError && (
+            <p className="text-xs text-destructive">{authError}</p>
+          )}
+          <button
+            type="submit"
+            className="mt-1 px-3 py-2.5 rounded-lg bg-primary text-primary-foreground font-semibold text-sm cursor-pointer hover:opacity-90 transition-opacity"
+          >
             {authMode === "login" ? "Sign In" : "Sign Up"}
           </button>
-          <button type="button" style={s.link} onClick={() => setAuthMode(m => m === "login" ? "signup" : "login")}>
+          <button
+            type="button"
+            className="bg-transparent border-none text-muted-foreground text-xs text-center underline cursor-pointer"
+            onClick={() => setAuthMode(m => m === "login" ? "signup" : "login")}
+          >
             {authMode === "login" ? "Need an account? Sign up" : "Have an account? Sign in"}
           </button>
         </form>
-        <p style={s.disclosure}>We may earn affiliate commission from purchases.</p>
+
+        <p className="text-[10px] text-muted-foreground/60 text-center mt-auto pt-5">
+          We may earn affiliate commission from purchases.
+        </p>
       </div>
     );
   }
 
   return (
-    <div style={s.container}>
-      <div style={s.header}>
-        <div>
-          <span style={s.logo}>VTO</span>
-          <span style={{ ...s.subtitle, marginLeft: 8 }}>{user.email}</span>
+    <div className="w-[380px] min-h-[420px] p-5 flex flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-baseline gap-2">
+          <span className="text-xl font-bold tracking-tight">VTO</span>
+          <span className="text-xs text-muted-foreground truncate max-w-[200px]">{user.email}</span>
         </div>
-        <button style={s.btnGhost} onClick={handleSignOut}>Sign Out</button>
+        <button
+          className="bg-transparent border-none text-muted-foreground text-xs font-medium px-2 py-1 cursor-pointer hover:text-foreground transition-colors rounded"
+          onClick={handleSignOut}
+        >
+          Sign Out
+        </button>
       </div>
-      <div style={{ ...s.divider, margin: "12px 0" }} />
-      <a href={`${import.meta.env.VITE_APP_URL || "https://ddsasdkse.lovable.app"}/showroom`} target="_blank" rel="noopener" style={s.btnPrimary as any}>
+
+      <div className="h-px bg-border my-3" />
+
+      {/* Showroom link */}
+      <a
+        href={`${import.meta.env.VITE_APP_URL || "https://ddsasdkse.lovable.app"}/showroom`}
+        target="_blank"
+        rel="noopener"
+        className="block px-3 py-2.5 rounded-lg bg-primary text-primary-foreground font-semibold text-sm text-center no-underline hover:opacity-90 transition-opacity"
+      >
         Open Showroom ↗
       </a>
-      <div style={{ ...s.divider, margin: "12px 0" }} />
-      <h2 style={s.sectionTitle}>Recent Try-Ons</h2>
+
+      <div className="h-px bg-border my-3" />
+
+      {/* Recent try-ons */}
+      <h2 className="text-sm font-semibold tracking-tight mb-2">Recent Try-Ons</h2>
+
       {requests.length === 0 ? (
-        <p style={s.emptyText}>No try-ons yet. Visit a product page and click "Try On"!</p>
+        <p className="text-xs text-muted-foreground">
+          No try-ons yet. Visit a product page and click "Try On"!
+        </p>
       ) : (
-        <div style={s.list}>
+        <div className="flex flex-col gap-2">
           {requests.map(r => (
-            <div key={r.id} style={s.card}>
+            <div
+              key={r.id}
+              className="flex items-center gap-2.5 p-2.5 rounded-xl bg-card border border-border"
+            >
               {r.result_image_url && (
-                <img src={r.result_image_url} alt="Result" style={s.cardImg} />
+                <img
+                  src={r.result_image_url}
+                  alt="Result"
+                  className="w-11 h-11 object-cover rounded-lg shrink-0"
+                />
               )}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={s.cardTitle}>{r.title || "Untitled"}</p>
-                <p style={s.cardMeta}>
-                  <span style={{
-                    display: "inline-block", width: 6, height: 6,
-                    borderRadius: "50%",
-                    background: r.status === "completed" ? c.accent : c.fgDim,
-                    marginRight: 4, verticalAlign: "middle",
-                  }} />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{r.title || "Untitled"}</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1">
+                  <span
+                    className={`inline-block w-1.5 h-1.5 rounded-full ${
+                      r.status === "completed" ? "bg-success" : "bg-muted-foreground/40"
+                    }`}
+                  />
                   {r.status}
                 </p>
               </div>
@@ -136,31 +184,10 @@ export function Popup() {
           ))}
         </div>
       )}
-      <p style={s.disclosure}>We may earn affiliate commission from purchases.</p>
+
+      <p className="text-[10px] text-muted-foreground/60 text-center mt-auto pt-5">
+        We may earn affiliate commission from purchases.
+      </p>
     </div>
   );
 }
-
-const s: Record<string, React.CSSProperties> = {
-  container: { width: 380, minHeight: 420, padding: 20, fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif', background: c.bg, color: c.fg, fontSize: 13, lineHeight: 1.5 },
-  logoRow: { display: "flex", alignItems: "baseline", gap: 6, marginBottom: 2 },
-  logo: { fontSize: 20, fontWeight: 700, letterSpacing: "-0.03em" },
-  version: { fontSize: 11, color: c.fgDim, fontWeight: 500 },
-  subtitle: { fontSize: 12, color: c.fgMuted, margin: 0 },
-  header: { display: "flex", justifyContent: "space-between", alignItems: "center" },
-  divider: { height: 1, background: c.border },
-  sectionTitle: { fontSize: 13, fontWeight: 600, margin: "0 0 8px", letterSpacing: "-0.01em" },
-  emptyText: { fontSize: 12, color: c.fgMuted, margin: 0 },
-  list: { display: "flex", flexDirection: "column", gap: 8 },
-  card: { display: "flex", gap: 10, padding: 10, borderRadius: 10, background: c.bgCard, border: `1px solid ${c.border}`, alignItems: "center" },
-  cardImg: { width: 44, height: 44, objectFit: "cover", borderRadius: 8, flexShrink: 0 },
-  cardTitle: { fontSize: 13, fontWeight: 500, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-  cardMeta: { fontSize: 11, color: c.fgMuted, margin: "2px 0 0" },
-  form: { display: "flex", flexDirection: "column", gap: 8 },
-  input: { padding: "9px 12px", borderRadius: 8, border: `1px solid ${c.border}`, background: c.bg, color: c.fg, fontSize: 13, outline: "none" },
-  btnPrimary: { display: "block", padding: "9px 12px", borderRadius: 8, border: "none", background: c.primary, color: c.primaryFg, fontWeight: 600, fontSize: 13, cursor: "pointer", marginTop: 4, textAlign: "center" as const, textDecoration: "none" },
-  btnGhost: { background: "none", border: "none", color: c.fgMuted, cursor: "pointer", fontSize: 12, fontWeight: 500, padding: "4px 8px" },
-  link: { background: "none", border: "none", color: c.fgMuted, cursor: "pointer", fontSize: 12, textAlign: "center" as const, textDecoration: "underline" },
-  error: { fontSize: 12, color: c.danger, margin: 0 },
-  disclosure: { fontSize: 10, color: c.fgDim, textAlign: "center" as const, marginTop: 20 },
-};
