@@ -3,7 +3,7 @@
   "name": "VTO — Virtual Try-On",
   "version": "1.0.0",
   "description": "Try products on yourself before you buy. Browse any online store and see how items look on you.",
-  "permissions": ["storage", "activeTab"],
+  "permissions": ["storage", "activeTab", "identity"],
   "host_permissions": ["<all_urls>"],
   "action": {
     "default_popup": "popup.html"

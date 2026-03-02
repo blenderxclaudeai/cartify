@@ -1,14 +1,110 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "@ext/lib/supabase";
+import { signInWithOAuth, signOut, getStoredUser } from "@ext/lib/auth";
 import type { User } from "@supabase/supabase-js";
 
 const APP_URL = import.meta.env.VITE_APP_URL || "https://ddsasdkse.lovable.app";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+
+type Screen = "profile" | "showroom";
+
+interface StoredUser {
+  id: string;
+  email: string;
+  name: string;
+  avatar_url?: string;
+}
+
+interface TryonResult {
+  id: string;
+  title: string | null;
+  image_url: string;
+  result_image_url: string | null;
+  status: string;
+  price: string | null;
+  page_url: string;
+  retailer_domain: string | null;
+}
+
+interface PhotoRecord {
+  id: string;
+  category: string;
+  storage_path: string;
+  signedUrl?: string;
+}
+
+const CATEGORY_GROUPS = [
+  {
+    key: "you",
+    label: "You",
+    categories: [
+      { key: "full_body", label: "Full Body" },
+      { key: "upper_body", label: "Upper Body" },
+      { key: "face", label: "Face" },
+      { key: "hands", label: "Hands" },
+      { key: "fingers", label: "Fingers" },
+      { key: "nails", label: "Nails" },
+      { key: "hair", label: "Hair" },
+      { key: "ears", label: "Ears" },
+    ],
+  },
+  {
+    key: "home",
+    label: "Home",
+    categories: [
+      { key: "living_room", label: "Living Room" },
+      { key: "kitchen", label: "Kitchen" },
+      { key: "bedroom", label: "Bedroom" },
+      { key: "bathroom", label: "Bathroom" },
+      { key: "office", label: "Office" },
+    ],
+  },
+  {
+    key: "pets",
+    label: "Pets",
+    categories: [
+      { key: "dog", label: "Dog" },
+      { key: "cat", label: "Cat" },
+    ],
+  },
+  {
+    key: "vehicle",
+    label: "Vehicle",
+    categories: [
+      { key: "car_interior", label: "Car Interior" },
+      { key: "car_exterior", label: "Car Exterior" },
+    ],
+  },
+  {
+    key: "garden",
+    label: "Garden",
+    categories: [
+      { key: "patio", label: "Patio" },
+      { key: "garden", label: "Garden" },
+      { key: "balcony", label: "Balcony" },
+    ],
+  },
+];
 
 export function Popup() {
   const [user, setUser] = useState<User | null>(null);
+  const [storedUser, setStoredUser] = useState<StoredUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [requests, setRequests] = useState<any[]>([]);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [screen, setScreen] = useState<Screen>("profile");
 
+  // Try-on state
+  const [results, setResults] = useState<TryonResult[]>([]);
+  const [resultsLoading, setResultsLoading] = useState(false);
+
+  // Profile photo state
+  const [photos, setPhotos] = useState<PhotoRecord[]>([]);
+  const [photosLoading, setPhotosLoading] = useState(false);
+  const [uploading, setUploading] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("you");
+
+  // Initialize auth
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       const u = data.session?.user ?? null;
@@ -18,37 +114,140 @@ export function Popup() {
         chrome.storage.local.set({ vto_auth_token: data.session.access_token });
       }
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
+
+    getStoredUser().then(setStoredUser);
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_, session) => {
       setUser(session?.user ?? null);
       if (session?.access_token) {
         chrome.storage.local.set({ vto_auth_token: session.access_token });
-      } else {
-        chrome.storage.local.remove("vto_auth_token");
       }
     });
     return () => subscription.unsubscribe();
   }, []);
 
+  // Load try-on results when on showroom
   useEffect(() => {
-    if (!user) { setRequests([]); return; }
+    if (!user || screen !== "showroom") return;
+    setResultsLoading(true);
     supabase
       .from("tryon_requests")
       .select("*")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
-      .limit(5)
-      .then(({ data }) => setRequests(data ?? []));
-  }, [user]);
+      .then(({ data }) => {
+        setResults(data ?? []);
+        setResultsLoading(false);
+      });
+  }, [user, screen]);
 
-  const handleSignIn = () => {
-    chrome.tabs.create({ url: `${APP_URL}/login` });
+  // Load profile photos when on profile
+  useEffect(() => {
+    if (!user || screen !== "profile") return;
+    setPhotosLoading(true);
+    supabase
+      .from("profile_photos")
+      .select("*")
+      .eq("user_id", user.id)
+      .then(async ({ data }) => {
+        if (data) {
+          const withUrls = await Promise.all(
+            data.map(async (p: any) => {
+              const { data: urlData } = await supabase.storage
+                .from("profile-photos")
+                .createSignedUrl(p.storage_path, 3600);
+              return { ...p, signedUrl: urlData?.signedUrl } as PhotoRecord;
+            })
+          );
+          setPhotos(withUrls);
+        }
+        setPhotosLoading(false);
+      });
+  }, [user, screen]);
+
+  const handleOAuth = async (provider: "google" | "apple") => {
+    setAuthError("");
+    setAuthLoading(true);
+    try {
+      const session = await signInWithOAuth(provider);
+      if (session) {
+        setUser(session.user);
+        setStoredUser({
+          id: session.user.id,
+          email: session.user.email || "",
+          name:
+            session.user.user_metadata?.full_name ||
+            session.user.user_metadata?.name ||
+            session.user.email ||
+            "",
+          avatar_url: session.user.user_metadata?.avatar_url,
+        });
+      }
+    } catch (err: any) {
+      setAuthError(err.message || "Sign in failed");
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    chrome.storage.local.remove(["vto_auth_token"]);
+    await signOut();
+    setUser(null);
+    setStoredUser(null);
+    setResults([]);
+    setPhotos([]);
   };
 
+  const handleUpload = async (category: string, file: File) => {
+    if (!user) return;
+    setUploading(category);
+    const path = `${user.id}/${category}-${Date.now()}`;
+
+    const existing = photos.find((p) => p.category === category);
+    if (existing) {
+      await supabase.storage.from("profile-photos").remove([existing.storage_path]);
+      await supabase.from("profile_photos").delete().eq("id", existing.id);
+    }
+
+    const { error: uploadErr } = await supabase.storage
+      .from("profile-photos")
+      .upload(path, file);
+    if (uploadErr) {
+      setUploading(null);
+      return;
+    }
+
+    await supabase.from("profile_photos").insert({
+      user_id: user.id,
+      category: category as any,
+      storage_path: path,
+    });
+    setUploading(null);
+
+    // Reload photos
+    const { data } = await supabase.from("profile_photos").select("*").eq("user_id", user.id);
+    if (data) {
+      const withUrls = await Promise.all(
+        data.map(async (p: any) => {
+          const { data: urlData } = await supabase.storage
+            .from("profile-photos")
+            .createSignedUrl(p.storage_path, 3600);
+          return { ...p, signedUrl: urlData?.signedUrl } as PhotoRecord;
+        })
+      );
+      setPhotos(withUrls);
+    }
+  };
+
+  const handleDeletePhoto = async (photo: PhotoRecord) => {
+    await supabase.storage.from("profile-photos").remove([photo.storage_path]);
+    await supabase.from("profile_photos").delete().eq("id", photo.id);
+    setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
+  };
+
+  // ── LOADING ──
   if (loading) {
     return (
       <div className="w-[380px] min-h-[420px] p-5 flex items-center justify-center">
@@ -57,104 +256,306 @@ export function Popup() {
     );
   }
 
+  // ── LOGGED OUT: OAuth Screen ──
   if (!user) {
     return (
-      <div className="w-[380px] min-h-[420px] p-5 flex flex-col">
-        {/* Logo */}
-        <div className="flex items-baseline gap-1.5 mb-0.5">
-          <span className="text-xl font-bold tracking-tight">VTO</span>
-          <span className="text-[11px] text-muted-foreground font-medium">v1.0</span>
+      <div className="w-[380px] min-h-[480px] p-8 flex flex-col justify-between">
+        {/* Header */}
+        <div className="space-y-1 pt-12 text-center">
+          <h1 className="text-[28px] font-semibold tracking-tight text-foreground">VTO</h1>
+          <p className="text-[14px] text-muted-foreground">Try before you buy</p>
         </div>
-        <p className="text-xs text-muted-foreground mb-6">Try before you buy</p>
 
-        {/* Sign in via web app */}
-        <div className="flex flex-col items-center gap-3 my-auto">
-          <p className="text-sm text-muted-foreground text-center leading-relaxed">
-            Sign in on the VTO web app to enable virtual try-ons.
-          </p>
+        {/* OAuth buttons */}
+        <div className="space-y-3">
+          {authError && (
+            <p className="text-xs text-center" style={{ color: "hsl(0 72% 51%)" }}>
+              {authError}
+            </p>
+          )}
           <button
-            onClick={handleSignIn}
-            className="w-full px-3 py-2.5 rounded-lg bg-primary text-primary-foreground font-semibold text-sm cursor-pointer hover:opacity-90 transition-opacity"
+            onClick={() => handleOAuth("google")}
+            disabled={authLoading}
+            className="w-full rounded-xl bg-foreground py-3.5 text-[14px] font-medium text-background transition-opacity hover:opacity-80 disabled:opacity-50"
           >
-            Sign in on VTO ↗
+            {authLoading ? "Signing in…" : "Continue with Google"}
+          </button>
+          <button
+            onClick={() => handleOAuth("apple")}
+            disabled={authLoading}
+            className="w-full rounded-xl border border-border bg-background py-3.5 text-[14px] font-medium text-foreground transition-opacity hover:opacity-80 disabled:opacity-50"
+          >
+            Continue with Apple
           </button>
         </div>
 
-        <p className="text-[10px] text-muted-foreground/60 text-center mt-auto pt-5">
-          We may earn affiliate commission from purchases.
-        </p>
+        {/* Footer */}
+        <div className="pb-2 text-center">
+          <span className="text-[11px] text-muted-foreground/60">Privacy Policy & Terms</span>
+        </div>
       </div>
     );
   }
 
+  // ── LOGGED IN ──
+  const displayName =
+    storedUser?.name ||
+    user.user_metadata?.full_name ||
+    user.user_metadata?.name ||
+    "User";
+  const email = storedUser?.email || user.email || "";
+  const avatarUrl = storedUser?.avatar_url || user.user_metadata?.avatar_url;
+  const initial = displayName.charAt(0).toUpperCase();
+
+  const completedResults = results.filter((r) => r.result_image_url);
+  const pendingResults = results.filter((r) => !r.result_image_url);
+
+  const getAffiliateUrl = (r: TryonResult) =>
+    `${SUPABASE_URL}/functions/v1/redirect?target=${encodeURIComponent(r.page_url)}&retailerDomain=${r.retailer_domain ?? ""}`;
+
+  const activeGroup = CATEGORY_GROUPS.find((g) => g.key === activeTab) || CATEGORY_GROUPS[0];
+
   return (
-    <div className="w-[380px] min-h-[420px] p-5 flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-baseline gap-2">
-          <span className="text-xl font-bold tracking-tight">VTO</span>
-          <span className="text-xs text-muted-foreground truncate max-w-[200px]">{user.email}</span>
-        </div>
+    <div className="w-[380px] min-h-[480px] flex flex-col">
+      {/* Settings gear + sign out */}
+      <div className="flex items-center justify-end px-3 pt-3">
         <button
-          className="bg-transparent border-none text-muted-foreground text-xs font-medium px-2 py-1 cursor-pointer hover:text-foreground transition-colors rounded"
           onClick={handleSignOut}
+          className="text-muted-foreground text-[11px] font-medium px-2 py-1 rounded hover:bg-secondary hover:text-foreground transition-colors"
         >
           Sign Out
         </button>
       </div>
 
-      <div className="h-px bg-border my-3" />
-
-      {/* Showroom link */}
-      <a
-        href={`${APP_URL}/showroom`}
-        target="_blank"
-        rel="noopener"
-        className="block px-3 py-2.5 rounded-lg bg-primary text-primary-foreground font-semibold text-sm text-center no-underline hover:opacity-90 transition-opacity"
-      >
-        Open Showroom ↗
-      </a>
-
-      <div className="h-px bg-border my-3" />
-
-      {/* Recent try-ons */}
-      <h2 className="text-sm font-semibold tracking-tight mb-2">Recent Try-Ons</h2>
-
-      {requests.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          No try-ons yet. Visit a product page and click "Try On"!
-        </p>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {requests.map(r => (
-            <div
-              key={r.id}
-              className="flex items-center gap-2.5 p-2.5 rounded-xl bg-card border border-border"
-            >
-              {r.result_image_url && (
-                <img
-                  src={r.result_image_url}
-                  alt="Result"
-                  className="w-11 h-11 object-cover rounded-lg shrink-0"
-                />
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{r.title || "Untitled"}</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1">
-                  <span
-                    className={`inline-block w-1.5 h-1.5 rounded-full ${
-                      r.status === "completed" ? "bg-success" : "bg-muted-foreground/40"
-                    }`}
-                  />
-                  {r.status}
-                </p>
+      {/* Content area */}
+      <div className="flex-1 overflow-y-auto scrollbar-hide px-5 pb-2">
+        {screen === "profile" ? (
+          /* ── PROFILE SCREEN ── */
+          <div className="flex flex-col">
+            {/* Avatar + info */}
+            <div className="flex flex-col items-center pt-2 text-center">
+              <div className="h-14 w-14 rounded-full bg-secondary flex items-center justify-center overflow-hidden">
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt={displayName} className="h-full w-full object-cover" />
+                ) : (
+                  <span className="text-[15px] font-medium text-muted-foreground">{initial}</span>
+                )}
               </div>
+              <p className="mt-3 text-[15px] font-medium text-foreground">{displayName}</p>
+              <p className="mt-0.5 text-[12px] text-muted-foreground">{email}</p>
             </div>
-          ))}
-        </div>
-      )}
 
-      <p className="text-[10px] text-muted-foreground/60 text-center mt-auto pt-5">
+            {/* Photo tabs */}
+            <p className="text-center text-[12px] text-muted-foreground mt-4">
+              Your photos for virtual try-on
+            </p>
+
+            {/* Tab buttons */}
+            <div className="flex justify-center gap-1 mt-3 flex-wrap">
+              {CATEGORY_GROUPS.map((group) => (
+                <button
+                  key={group.key}
+                  onClick={() => setActiveTab(group.key)}
+                  className={`px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors ${
+                    activeTab === group.key
+                      ? "bg-foreground text-background"
+                      : "bg-secondary text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {group.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Photo grid */}
+            <div className="grid grid-cols-2 gap-3 pt-3 pb-4">
+              {activeGroup.categories.map((cat) => {
+                const photo = photos.find((p) => p.category === cat.key);
+                return (
+                  <div key={cat.key} className="group relative">
+                    {photosLoading ? (
+                      <div className="aspect-square rounded-xl bg-secondary animate-pulse" />
+                    ) : photo?.signedUrl ? (
+                      <div className="relative">
+                        <img
+                          src={photo.signedUrl}
+                          alt={cat.label}
+                          className="aspect-square w-full rounded-xl object-cover"
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-xl bg-foreground/0 opacity-0 transition-all group-hover:bg-foreground/40 group-hover:opacity-100">
+                          <label className="cursor-pointer rounded-lg bg-background/90 px-3 py-1.5 text-[11px] font-medium text-foreground transition-opacity hover:opacity-80">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) =>
+                                e.target.files?.[0] && handleUpload(cat.key, e.target.files[0])
+                              }
+                            />
+                            Replace
+                          </label>
+                          <button
+                            onClick={() => handleDeletePhoto(photo)}
+                            className="rounded-lg px-3 py-1.5 text-[11px] font-medium text-background transition-opacity hover:opacity-80"
+                            style={{ background: "hsl(0 72% 51%)" }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                        <p className="mt-1.5 text-center text-[11px] font-medium text-muted-foreground">
+                          {cat.label}
+                        </p>
+                      </div>
+                    ) : (
+                      <label className="flex aspect-square cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-border bg-background text-muted-foreground transition-colors hover:bg-secondary/50">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) =>
+                            e.target.files?.[0] && handleUpload(cat.key, e.target.files[0])
+                          }
+                        />
+                        {uploading === cat.key ? (
+                          <span className="text-[12px]">Uploading…</span>
+                        ) : (
+                          <>
+                            <span className="text-[18px] leading-none">+</span>
+                            <span className="mt-1 text-[11px] font-medium">{cat.label}</span>
+                          </>
+                        )}
+                      </label>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          /* ── SHOWROOM SCREEN ── */
+          <div className="flex flex-col">
+            <div className="pt-2 text-center">
+              <h1 className="text-[22px] font-semibold tracking-tight text-foreground">Showroom</h1>
+              <p className="mt-1 text-[13px] text-muted-foreground">See how products look on you</p>
+            </div>
+
+            <div className="py-4">
+              {resultsLoading ? (
+                <div className="grid grid-cols-2 gap-3">
+                  {[1, 2, 3, 4].map((i) => (
+                    <div key={i} className="aspect-[3/4] rounded-xl bg-secondary animate-pulse" />
+                  ))}
+                </div>
+              ) : results.length === 0 ? (
+                <div className="flex flex-col items-center justify-center text-center py-12">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary">
+                    <span className="text-[24px]">✨</span>
+                  </div>
+                  <p className="mt-4 text-[14px] font-medium text-foreground">Nothing here yet</p>
+                  <p className="mt-1 max-w-[240px] text-[12px] leading-relaxed text-muted-foreground">
+                    Browse any online store and try products on yourself — clothes, glasses, jewelry,
+                    and more.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {completedResults.length > 0 && (
+                    <div className="grid grid-cols-2 gap-3">
+                      {completedResults.map((r) => (
+                        <div key={r.id} className="group relative">
+                          <img
+                            src={r.result_image_url!}
+                            alt={r.title || "Try-on result"}
+                            className="aspect-[3/4] w-full rounded-xl object-cover"
+                          />
+                          {(r.title || r.price) && (
+                            <div className="mt-1.5 px-0.5">
+                              {r.title && (
+                                <p className="truncate text-[12px] font-medium text-foreground">
+                                  {r.title}
+                                </p>
+                              )}
+                              <div className="flex items-center gap-1.5">
+                                {r.price && (
+                                  <span className="text-[11px] text-muted-foreground">{r.price}</span>
+                                )}
+                                {r.retailer_domain && (
+                                  <span className="text-[10px] text-muted-foreground/50">
+                                    {r.retailer_domain}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                          <a
+                            href={getAffiliateUrl(r)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-lg bg-foreground px-3 py-1.5 text-[11px] font-medium text-background transition-opacity hover:opacity-90 no-underline"
+                          >
+                            🛒 Add to Cart
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {pendingResults.length > 0 && (
+                    <div>
+                      <p className="mb-3 text-[12px] font-medium text-muted-foreground">
+                        Processing
+                      </p>
+                      <div className="grid grid-cols-2 gap-3">
+                        {pendingResults.map((r) => (
+                          <div key={r.id} className="relative">
+                            <img
+                              src={r.image_url}
+                              alt={r.title || "Processing"}
+                              className="aspect-[3/4] w-full rounded-xl object-cover opacity-50"
+                            />
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <span className="rounded-lg bg-background/80 px-2 py-1 text-[11px] font-medium text-muted-foreground">
+                                {r.status}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom tab bar */}
+      <nav className="flex items-center justify-around border-t px-2 py-3" style={{ borderColor: "hsl(0 0% 92%)" }}>
+        <button
+          onClick={() => setScreen("profile")}
+          className={`text-[13px] font-medium tracking-tight transition-opacity ${
+            screen === "profile"
+              ? "text-foreground opacity-100"
+              : "text-muted-foreground opacity-60 hover:opacity-100"
+          }`}
+        >
+          Profile
+        </button>
+        <button
+          onClick={() => setScreen("showroom")}
+          className={`text-[13px] font-medium tracking-tight transition-opacity ${
+            screen === "showroom"
+              ? "text-foreground opacity-100"
+              : "text-muted-foreground opacity-60 hover:opacity-100"
+          }`}
+        >
+          Showroom
+        </button>
+      </nav>
+
+      {/* Disclosure */}
+      <p className="text-[10px] text-muted-foreground/60 text-center pb-2">
         We may earn affiliate commission from purchases.
       </p>
     </div>

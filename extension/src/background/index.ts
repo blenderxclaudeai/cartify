@@ -6,8 +6,11 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as strin
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // Auth check
   if (msg?.type === "VTO_GET_AUTH") {
-    chrome.storage.local.get("vto_auth_token", (result) => {
-      sendResponse({ loggedIn: !!result.vto_auth_token });
+    chrome.storage.local.get(["vto_auth_token", "vto_user"], (result) => {
+      sendResponse({
+        loggedIn: !!result.vto_auth_token,
+        user: result.vto_user || null,
+      });
     });
     return true;
   }
@@ -18,7 +21,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   (async () => {
     try {
-      // Get auth token
       const stored = await chrome.storage.local.get("vto_auth_token");
       const authToken = stored.vto_auth_token;
 
@@ -46,7 +48,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (!res.ok) {
         sendResponse({ ok: false, error: data.error || `HTTP ${res.status}` });
       } else {
-        // Cache result for popup
         chrome.storage.local.set({
           vto_last_result: {
             ...data,
@@ -67,7 +68,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
   })();
 
-  return true; // keep channel open for async sendResponse
+  return true;
 });
 
 chrome.runtime.onInstalled.addListener(() => {

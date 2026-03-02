@@ -1,5 +1,13 @@
 import { extractProduct } from "./productExtract";
-import { injectButton, injectLoginPill, removeLoginPill, showModal, updateModalSuccess, updateModalError, getRetryButton } from "./ui";
+import {
+  injectButton,
+  injectLoginPill,
+  removeLoginPill,
+  showModal,
+  updateModalSuccess,
+  updateModalError,
+  getRetryButton,
+} from "./ui";
 
 (() => {
   if (document.getElementById("vto-tryon-btn") || document.getElementById("vto-login-pill")) return;
@@ -15,6 +23,23 @@ import { injectButton, injectLoginPill, removeLoginPill, showModal, updateModalS
       removeLoginPill();
       injectButton(doTryOn);
     } else {
+      injectLoginPill();
+    }
+  });
+
+  // Listen for auth state changes so button updates immediately after login
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local" || !changes.vto_auth_token) return;
+
+    if (changes.vto_auth_token.newValue) {
+      // Just logged in
+      removeLoginPill();
+      if (!document.getElementById("vto-tryon-btn")) {
+        injectButton(doTryOn);
+      }
+    } else {
+      // Just logged out
+      document.getElementById("vto-tryon-btn")?.remove();
       injectLoginPill();
     }
   });
