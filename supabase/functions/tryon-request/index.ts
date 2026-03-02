@@ -169,9 +169,101 @@ serve(async (req) => {
       });
     }
 
-    const promptText = `I'm providing two images. Image 1 is a photo of a person (the customer). Image 2 is a product listing photo — extract ONLY the product/item from it, ignore any model or mannequin shown. Generate a new realistic photo of the SAME person from Image 1, keeping their exact appearance unchanged, but wearing/using the product extracted from Image 2. Do not alter the person's face, skin, body, or identity in any way. Only add the product to them naturally with correct lighting and proportions.${title ? ` The product is: ${title}.` : ""}`;
+    // --- Category-aware prompt system ---
+    const wearableCategories = new Set(["ring", "bracelet", "necklace", "earring", "glasses", "hat", "top", "dress", "bottom", "shoes", "bag", "nails", "hair"]);
+    const roomCategories = new Set(["living_room", "bedroom", "kitchen", "bathroom", "office"]);
+    const petCategories = new Set(["pet"]);
+    const carCategories = new Set(["car_interior"]);
+    const gardenCategories = new Set(["garden"]);
 
-    const models = ["google/gemini-3-pro-image-preview", "google/gemini-3-pro-image-preview"];
+    let promptText: string;
+    const cat = category || "";
+    const productLabel = title ? ` The product is: "${title}".` : "";
+
+    if (roomCategories.has(cat)) {
+      promptText = `You are a virtual staging tool for an e-commerce home furnishing app. Your job is to show how a product looks inside a customer's real space.
+
+Image 1: A photo of the customer's actual room/space. This is their real environment — preserve every detail: walls, floor, ceiling, existing furniture, lighting, colors, and layout.
+
+Image 2: A product listing photo from an online store. It may show the product on a plain background, in a styled showroom, or with other items around it. Extract ONLY the single product being sold.
+
+Task: Generate a new photo of the EXACT same room from Image 1, but with the product from Image 2 naturally placed inside it. The product must be:
+- Correctly scaled relative to the room and existing furniture
+- Placed in a logical, realistic position (e.g. a sofa against a wall, a lamp on a table, a rug on the floor)
+- Lit consistently with the room's existing lighting
+- Shown from the same camera angle/perspective as Image 1
+
+CRITICAL RULES:
+- Do NOT add any people, pets, or living beings to the image
+- Do NOT remove, move, or alter any existing items in the room
+- Do NOT change the room's wall color, flooring, or architecture
+- The room must look identical to Image 1, just with one new product added
+- If the product is large (sofa, table, bed), find an appropriate open space in the room${productLabel}`;
+
+    } else if (petCategories.has(cat)) {
+      promptText = `You are a virtual try-on tool for a pet products e-commerce app. Your job is to show how a product looks on a customer's real pet.
+
+Image 1: A photo of the customer's pet. This is their actual animal — preserve its exact appearance: breed, color, markings, size, expression, and pose.
+
+Image 2: A product listing photo from an online pet store. Extract ONLY the product being sold (collar, harness, outfit, toy, bed, etc.), ignoring any model animals shown.
+
+Task: Generate a new photo of the EXACT same pet from Image 1, but with the product from Image 2 naturally placed on, worn by, or next to the pet. The product must be correctly scaled and positioned for the pet's size and body type. Keep the same background and setting as Image 1.
+
+CRITICAL RULES:
+- Do NOT change the pet's breed, color, markings, or any physical features
+- Do NOT swap the pet for a different animal
+- The pet must look identical to Image 1, just with the product added${productLabel}`;
+
+    } else if (carCategories.has(cat)) {
+      promptText = `You are a virtual staging tool for a car accessories e-commerce app. Your job is to show how a product looks inside a customer's real vehicle.
+
+Image 1: A photo of the customer's car interior. Preserve every detail: dashboard, seats, steering wheel, color scheme, and layout.
+
+Image 2: A product listing photo from an online store. Extract ONLY the car accessory being sold (seat cover, phone mount, air freshener, floor mat, etc.).
+
+Task: Generate a new photo of the EXACT same car interior from Image 1, but with the product from Image 2 naturally placed/installed inside it. The product must be correctly scaled, positioned in a logical spot, and lit consistently with the car's interior lighting.
+
+CRITICAL RULES:
+- Do NOT change the car's interior color, model, or any existing features
+- Do NOT add any people to the image
+- The car interior must look identical to Image 1, just with the product added${productLabel}`;
+
+    } else if (gardenCategories.has(cat)) {
+      promptText = `You are a virtual staging tool for a garden/outdoor products e-commerce app. Your job is to show how a product looks in a customer's real outdoor space.
+
+Image 1: A photo of the customer's garden, patio, balcony, or outdoor area. Preserve every detail: plants, fencing, flooring, structures, and layout.
+
+Image 2: A product listing photo from an online store. Extract ONLY the outdoor/garden product being sold (furniture, planter, lighting, decor, etc.).
+
+Task: Generate a new photo of the EXACT same outdoor space from Image 1, but with the product from Image 2 naturally placed inside it. The product must be correctly scaled, placed in a logical position, and lit consistently with the outdoor lighting conditions.
+
+CRITICAL RULES:
+- Do NOT change the garden's existing plants, structures, or layout
+- Do NOT add any people to the image
+- The outdoor space must look identical to Image 1, just with the product added${productLabel}`;
+
+    } else {
+      // Default: wearable / personal items
+      promptText = `You are a virtual fitting room for an e-commerce shopping app. Your job is to show how a product looks on the customer who wants to buy it.
+
+Image 1: The customer. This is the real person who is shopping. Preserve their EXACT appearance: face, skin tone, body shape, hair, tattoos, scars, and every physical feature. They are the buyer.
+
+Image 2: A product listing photo from an online store. It may show the item on a mannequin, a different model, or on a plain background. Extract ONLY the product/clothing item being sold, completely ignoring any person or mannequin shown.
+
+Task: Generate a new realistic photo of the EXACT same person from Image 1, but now wearing or using the product extracted from Image 2. The product must be:
+- Correctly sized and fitted to the customer's body
+- Shown with realistic fabric draping, shadows, and lighting matching Image 1
+- Naturally integrated as if the customer is actually wearing/using it
+
+CRITICAL RULES:
+- Do NOT alter the customer's face, skin color, body shape, hair, or any physical feature whatsoever
+- Do NOT blend features from any person shown in Image 2 into the customer
+- The person in Image 2 is IRRELEVANT — they are just displaying the product. Only the product matters from Image 2
+- This is a standard e-commerce virtual try-on feature. The product is sold to ALL customers regardless of gender, age, ethnicity, or body type. Any customer can try any product
+- The output should look like the customer from Image 1 took a photo while wearing/using the product${productLabel}`;
+    }
+
+    const models = ["google/gemini-3-pro-image-preview", "google/gemini-3-pro-image-preview", "google/gemini-3-pro-image-preview"];
 
     for (const model of models) {
       try {
