@@ -84,6 +84,14 @@ serve(async (req) => {
     // Determine required photo category
     const requiredPhotoCategory = category ? (CATEGORY_TO_PHOTO[category] || "full_body") : "full_body";
 
+    // Debug logging for category diagnosis
+    const wearableCategories = new Set(["ring", "bracelet", "necklace", "earring", "glasses", "hat", "top", "dress", "bottom", "shoes", "bag", "nails", "hair"]);
+    const roomCategories = new Set(["living_room", "bedroom", "kitchen", "bathroom", "office"]);
+    const promptMode = roomCategories.has(category || "") ? "room" :
+      wearableCategories.has(category || "") ? "wearable" :
+      category === "pet" ? "pet" : category === "car_interior" ? "car" : category === "garden" ? "garden" : "wearable(default)";
+    console.log(`Category received: "${category}", requiredPhoto: "${requiredPhotoCategory}", promptMode: "${promptMode}"`);
+
     let resultImageUrl: string | null = null;
     let userPhotoUrl: string | null = null;
     let aiRefusal: string | null = null;

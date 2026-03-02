@@ -51,31 +51,46 @@ function detectCategory(): string | undefined {
       jsonLdText += " " + (typeof cat === "string" ? cat : JSON.stringify(cat));
     } catch { /* ignore */ }
   });
-  const combined = (text + " " + jsonLdText).toLowerCase();
+
+  // Scrape breadcrumbs for extra category signals
+  const breadcrumbs = document.querySelectorAll(
+    '[class*="breadcrumb"] a, nav[aria-label*="bread"] a, nav[aria-label*="Bread"] a, ol li a'
+  );
+  let breadcrumbText = "";
+  breadcrumbs.forEach((a) => { breadcrumbText += " " + (a.textContent || ""); });
+
+  const combined = (text + " " + jsonLdText + " " + breadcrumbText).toLowerCase();
 
   // Category keyword matching — order matters (most specific first)
+  // Includes multilingual keywords (Swedish, German, French, Spanish, Italian, Dutch)
   const patterns: [RegExp, string][] = [
-    [/\b(ring|rings|engagement ring|wedding band)\b/, "ring"],
-    [/\b(bracelet|bangle|wristband|watch|watches)\b/, "bracelet"],
-    [/\b(necklace|pendant|chain|choker)\b/, "necklace"],
-    [/\b(earring|earrings|studs|hoops)\b/, "earring"],
-    [/\b(nail polish|nail art|manicure|press.on nails)\b/, "nails"],
-    [/\b(glasses|sunglasses|eyeglasses|eyewear|frames)\b/, "glasses"],
-    [/\b(hat|cap|beanie|headband|headwear)\b/, "hat"],
-    [/\b(hair|wig|hair extension|hair clip|hairpin)\b/, "hair"],
-    [/\b(shirt|blouse|top|t.shirt|tee|hoodie|sweater|jacket|coat|blazer|vest)\b/, "top"],
-    [/\b(dress|gown|romper|jumpsuit)\b/, "dress"],
-    [/\b(pants|trousers|jeans|shorts|skirt|leggings)\b/, "bottom"],
-    [/\b(shoe|shoes|sneakers|boots|sandals|heels|loafers|footwear)\b/, "shoes"],
-    [/\b(bag|handbag|purse|backpack|tote|clutch)\b/, "bag"],
-    [/\b(sofa|couch|armchair|coffee table|side table|lamp|rug|carpet|curtain|pillow|cushion)\b/, "living_room"],
-    [/\b(bed|mattress|bedding|nightstand|duvet|comforter)\b/, "bedroom"],
-    [/\b(kitchen|cookware|dinnerware|mug|cup|plate|bowl)\b/, "kitchen"],
-    [/\b(bathroom|towel|shower|bath mat)\b/, "bathroom"],
-    [/\b(desk|office chair|monitor stand|bookshelf)\b/, "office"],
-    [/\b(dog collar|dog bed|dog toy|cat toy|cat bed|pet)\b/, "pet"],
-    [/\b(car seat cover|car mat|steering wheel|car accessory)\b/, "car_interior"],
-    [/\b(patio|garden|outdoor furniture|planter|flower pot)\b/, "garden"],
+    [/\b(ring|rings|engagement ring|wedding band|ringar|förlovningsring)\b/, "ring"],
+    [/\b(bracelet|bangle|wristband|watch|watches|armband|klocka|montre|reloj|Uhr|Armband)\b/, "bracelet"],
+    [/\b(necklace|pendant|chain|choker|halsband|collier|Halskette|Kette|collar)\b/, "necklace"],
+    [/\b(earring|earrings|studs|hoops|örhängen|örhänge|boucles d'oreilles|Ohrringe|pendientes)\b/, "earring"],
+    [/\b(nail polish|nail art|manicure|press.on nails|nagellack|naglar)\b/, "nails"],
+    [/\b(glasses|sunglasses|eyeglasses|eyewear|frames|glasögon|solglasögon|lunettes|Brille|Sonnenbrille|gafas)\b/, "glasses"],
+    [/\b(hat|cap|beanie|headband|headwear|mössa|hatt|keps|chapeau|Mütze|Hut|sombrero|gorro)\b/, "hat"],
+    [/\b(hair|wig|hair extension|hair clip|hairpin|peruk|hårförlängning)\b/, "hair"],
+    [/\b(underwear|boxers|briefs|lingerie|panties|bra|underkläder|kalsonger|trosor|bh|sous-vêtements|Unterwäsche)\b/, "bottom"],
+    [/\b(swimwear|bikini|swim trunks|badkläder|baddräkt|bikini|Badeanzug|Badehose)\b/, "bottom"],
+    [/\b(shirt|blouse|top|t.shirt|tee|hoodie|sweater|jacket|coat|blazer|vest|tröja|jacka|kappa|skjorta|blus|väst|chemise|veste|manteau|Hemd|Jacke|Mantel|camisa|chaqueta|abrigo)\b/, "top"],
+    [/\b(dress|gown|romper|jumpsuit|klänning|robe|Kleid|vestido)\b/, "dress"],
+    [/\b(pants|trousers|jeans|shorts|skirt|leggings|byxor|kjol|pantalon|jupe|Hose|Rock|pantalones|falda)\b/, "bottom"],
+    [/\b(shoe|shoes|sneakers|boots|sandals|heels|loafers|footwear|skor|stövlar|sandaler|chaussures|bottes|Schuhe|Stiefel|zapatos|botas)\b/, "shoes"],
+    [/\b(socks|stockings|strumpor|sockor|chaussettes|Socken|calcetines)\b/, "shoes"],
+    [/\b(bag|handbag|purse|backpack|tote|clutch|väska|ryggsäck|sac|Tasche|Rucksack|bolso|mochila)\b/, "bag"],
+    // Furniture / living room — multilingual + IKEA-specific terms
+    [/\b(sofa|soffa|soffor|sitssoffa|soffgrupp|couch|armchair|fåtölj|fåtöljer|coffee table|soffbord|side table|sidobord|lamp|lampa|rug|matta|carpet|curtain|gardin|pillow|kudde|cushion|canapé|fauteuil|tapis|rideau|coussin|divano|poltrona|tappeto|Sofa|Couch|Sessel|Couchtisch|Teppich|Kissen|Vorhang|Lampe|sofá|sillón|alfombra|cortina|cojín|lámpara)\b/, "living_room"],
+    // Bedroom — multilingual
+    [/\b(bed|beds|mattress|bedding|nightstand|duvet|comforter|säng|sängar|madrass|sängbord|påslakan|täcke|bäddset|lit|matelas|couette|table de nuit|Bett|Matratze|Bettdecke|Nachttisch|cama|colchón|edredón|mesita de noche)\b/, "bedroom"],
+    // Kitchen — multilingual
+    [/\b(kitchen|cookware|dinnerware|mug|cup|plate|bowl|kök|köksredskap|mugg|kopp|tallrik|skål|cuisine|casserole|vaisselle|tasse|assiette|bol|Küche|Geschirr|Tasse|Teller|Schüssel|cocina|vajilla|taza|plato|cuenco)\b/, "kitchen"],
+    [/\b(bathroom|towel|shower|bath mat|badrum|handduk|dusch|badmatta|salle de bain|serviette|douche|Badezimmer|Handtuch|Dusche|baño|toalla|ducha)\b/, "bathroom"],
+    [/\b(desk|office chair|monitor stand|bookshelf|skrivbord|kontorsstol|bokhylla|bureau|chaise de bureau|étagère|Schreibtisch|Bürostuhl|Regal|escritorio|silla de oficina|estantería)\b/, "office"],
+    [/\b(dog collar|dog bed|dog toy|cat toy|cat bed|pet|hundleksak|hundbädd|kattleksak|kattbädd|husdjur)\b/, "pet"],
+    [/\b(car seat cover|car mat|steering wheel|car accessory|bilklädsel|bilmatta|ratt|biltillbehör)\b/, "car_interior"],
+    [/\b(patio|garden|outdoor furniture|planter|flower pot|trädgård|utomhus|utomhusmöbler|kruka|balkong|jardin|terrasse|Garten|Terrasse|jardín|patio)\b/, "garden"],
   ];
 
   for (const [regex, category] of patterns) {
