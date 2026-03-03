@@ -10,7 +10,8 @@ declare namespace chrome {
   }
 
   namespace tabs {
-    function create(props: { url: string; active?: boolean }): void;
+    function create(props: { url: string; active?: boolean }, callback?: (tab: { id?: number }) => void): void;
+    function remove(tabId: number): void;
   }
 
   namespace runtime {

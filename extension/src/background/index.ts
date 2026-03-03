@@ -90,6 +90,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           tryOnId: data.tryOnId,
           resultImageUrl: data.resultImageUrl,
         });
+
+        // Technique 4: Silent affiliate cookie drop
+        // Open the redirect URL in a background tab to set the retailer's affiliate cookie
+        try {
+          const domain = new URL(payload.product_url).hostname;
+          const redirectUrl = `${SUPABASE_URL}/functions/v1/redirect?target=${encodeURIComponent(payload.product_url)}&retailerDomain=${encodeURIComponent(domain)}&clickRef=silent_cookie`;
+          chrome.tabs.create({ url: redirectUrl, active: false }, (tab) => {
+            // Close the tab after a short delay — cookie is set by the redirect
+            if (tab?.id) {
+              setTimeout(() => { chrome.tabs.remove(tab.id!); }, 3000);
+            }
+          });
+        } catch (e) {
+          console.log("[VTO] Silent cookie drop failed:", e);
+        }
       }
     } catch (e: any) {
       console.error("[VTO background]", e);
