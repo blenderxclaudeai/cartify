@@ -11,7 +11,6 @@ export async function signInWithOAuth(
 ): Promise<{ ok: boolean; error?: string }> {
   const redirectUrl = chrome.identity.getRedirectURL();
 
-  // Build the Supabase OAuth authorize URL
   const authUrl =
     `${SUPABASE_URL}/auth/v1/authorize?provider=${provider}` +
     `&redirect_to=${encodeURIComponent(redirectUrl)}`;
@@ -29,7 +28,6 @@ export async function signInWithOAuth(
         }
 
         try {
-          // Tokens are in the URL hash fragment: #access_token=...&refresh_token=...
           const hashFragment = callbackUrl.split("#")[1];
           if (!hashFragment) {
             resolve({ ok: false, error: "No tokens in callback URL" });
@@ -45,7 +43,6 @@ export async function signInWithOAuth(
             return;
           }
 
-          // Fetch user info from Supabase using the access token
           const userRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
             headers: {
               apikey: SUPABASE_ANON_KEY,
@@ -70,11 +67,10 @@ export async function signInWithOAuth(
             avatar_url: userData.user_metadata?.avatar_url,
           };
 
-          // Persist to chrome.storage.local
           await chrome.storage.local.set({
-            vto_auth_token: access_token,
-            vto_refresh_token: refresh_token,
-            vto_user: user,
+            cartify_auth_token: access_token,
+            cartify_refresh_token: refresh_token,
+            cartify_user: user,
           });
 
           resolve({ ok: true });
@@ -93,8 +89,8 @@ export async function getStoredUser(): Promise<{
   avatar_url?: string;
 } | null> {
   try {
-    const result = await chrome.storage.local.get("vto_user");
-    return result.vto_user || null;
+    const result = await chrome.storage.local.get("cartify_user");
+    return result.cartify_user || null;
   } catch {
     return null;
   }
@@ -102,8 +98,8 @@ export async function getStoredUser(): Promise<{
 
 export async function isLoggedIn(): Promise<boolean> {
   try {
-    const result = await chrome.storage.local.get("vto_auth_token");
-    return !!result.vto_auth_token;
+    const result = await chrome.storage.local.get("cartify_auth_token");
+    return !!result.cartify_auth_token;
   } catch {
     return false;
   }
@@ -111,9 +107,9 @@ export async function isLoggedIn(): Promise<boolean> {
 
 export async function signOut() {
   await chrome.storage.local.remove([
-    "vto_auth_token",
-    "vto_refresh_token",
-    "vto_user",
-    "vto_last_result",
+    "cartify_auth_token",
+    "cartify_refresh_token",
+    "cartify_user",
+    "cartify_last_result",
   ]);
 }

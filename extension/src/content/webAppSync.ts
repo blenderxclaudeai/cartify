@@ -1,17 +1,15 @@
 /**
- * Content script that runs ONLY on the VTO web app domain.
+ * Content script that runs ONLY on the Cartify web app domain.
  * After the user completes OAuth on the web app, this script
  * reads the Supabase session from localStorage and sends it
  * to the extension background for persistence.
  */
 
 function getSupabaseSession() {
-  // Try multiple key patterns — Lovable Cloud and standard Supabase
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
     if (!key) continue;
 
-    // Match any key that looks like a Supabase auth token store
     const isAuthKey =
       (key.startsWith("sb-") && key.endsWith("-auth-token")) ||
       key.includes("supabase") && key.includes("auth");
@@ -58,19 +56,11 @@ function trySendSession() {
     (response) => {
       if (chrome.runtime.lastError) return;
       if (response?.ok) {
-        showSyncBanner();
+        // Session synced — the AuthCallback page handles the UI
         setTimeout(() => window.close(), 1500);
       }
     }
   );
-}
-
-function showSyncBanner() {
-  const banner = document.createElement("div");
-  banner.style.cssText =
-    "position:fixed;top:0;left:0;right:0;z-index:999999;background:#000;color:#fff;text-align:center;padding:12px;font-family:system-ui;font-size:14px;";
-  banner.textContent = "Signed in to VTO extension — this tab will close shortly";
-  document.body.appendChild(banner);
 }
 
 // Run immediately
@@ -88,5 +78,5 @@ let attempts = 0;
 const poll = setInterval(() => {
   attempts++;
   trySendSession();
-  if (attempts > 30) clearInterval(poll); // stop after ~15s
+  if (attempts > 30) clearInterval(poll);
 }, 500);

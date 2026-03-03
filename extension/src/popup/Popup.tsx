@@ -85,11 +85,10 @@ const CATEGORY_GROUPS = [
 ];
 
 export function Popup() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<any | null>(null);
   const [storedUser, setStoredUser] = useState<StoredUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
-  const [_authError, _setAuthError] = useState(""); // unused, kept for compat
   const [screen, setScreen] = useState<Screen>("profile");
 
   // Try-on state
@@ -102,31 +101,28 @@ export function Popup() {
   const [uploading, setUploading] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("you");
 
-  // Initialize auth — check chrome.storage for existing session
+  // Initialize auth
   useEffect(() => {
-    chrome.storage.local.get(["vto_auth_token", "vto_user"], (result) => {
-      if (result.vto_auth_token && result.vto_user) {
-        setStoredUser(result.vto_user);
-        // Set a minimal user object so the popup shows logged-in state
-        setUser({ id: result.vto_user.id } as any);
+    chrome.storage.local.get(["cartify_auth_token", "cartify_user"], (result) => {
+      if (result.cartify_auth_token && result.cartify_user) {
+        setStoredUser(result.cartify_user);
+        setUser({ id: result.cartify_user.id });
       }
       setLoading(false);
     });
 
-    // Listen for session arriving from web app content script
     const listener = (
       changes: Record<string, { oldValue?: any; newValue?: any }>,
       area: string
     ) => {
       if (area !== "local") return;
-      if (changes.vto_auth_token?.newValue && changes.vto_user?.newValue) {
-        const u = changes.vto_user.newValue;
+      if (changes.cartify_auth_token?.newValue && changes.cartify_user?.newValue) {
+        const u = changes.cartify_user.newValue;
         setStoredUser(u);
-        setUser({ id: u.id } as any);
+        setUser({ id: u.id });
         setAuthLoading(false);
       }
-      if (changes.vto_auth_token && !changes.vto_auth_token.newValue) {
-        // Logged out
+      if (changes.cartify_auth_token && !changes.cartify_auth_token.newValue) {
         setUser(null);
         setStoredUser(null);
       }
@@ -135,13 +131,13 @@ export function Popup() {
     return () => chrome.storage.onChanged.removeListener(listener);
   }, []);
 
-  // Load try-on results when on showroom — use auth token for direct fetch
+  // Load try-on results
   useEffect(() => {
     if (!storedUser || screen !== "showroom") return;
     setResultsLoading(true);
 
-    chrome.storage.local.get("vto_auth_token", async (result) => {
-      const token = result.vto_auth_token;
+    chrome.storage.local.get("cartify_auth_token", async (result) => {
+      const token = result.cartify_auth_token;
       if (!token) { setResultsLoading(false); return; }
 
       try {
@@ -165,13 +161,13 @@ export function Popup() {
     });
   }, [storedUser, screen]);
 
-  // Load profile photos when on profile — use auth token for direct fetch
+  // Load profile photos
   useEffect(() => {
     if (!storedUser || screen !== "profile") return;
     setPhotosLoading(true);
 
-    chrome.storage.local.get("vto_auth_token", async (result) => {
-      const token = result.vto_auth_token;
+    chrome.storage.local.get("cartify_auth_token", async (result) => {
+      const token = result.cartify_auth_token;
       if (!token) { setPhotosLoading(false); return; }
 
       try {
@@ -188,7 +184,6 @@ export function Popup() {
         );
         const data = await res.json();
         if (Array.isArray(data)) {
-          // Generate signed URLs for each photo
           const withUrls = await Promise.all(
             data.map(async (p: any) => {
               const signRes = await fetch(
@@ -226,9 +221,7 @@ export function Popup() {
     const result = await signInWithOAuth(provider);
     if (!result.ok) {
       setAuthLoading(false);
-      // User cancelled or error — stay on login screen
     }
-    // On success, chrome.storage.onChanged listener will update state
   };
 
   const handleSignOut = async () => {
@@ -243,8 +236,8 @@ export function Popup() {
     if (!storedUser) return;
     setUploading(category);
 
-    const stored = await chrome.storage.local.get("vto_auth_token");
-    const token = stored.vto_auth_token;
+    const stored = await chrome.storage.local.get("cartify_auth_token");
+    const token = stored.cartify_auth_token;
     if (!token) { setUploading(null); return; }
 
     const SUPABASE_API_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -252,7 +245,6 @@ export function Popup() {
     const filePath = `${storedUser.id}/${category}-${Date.now()}`;
     const headers = { apikey: ANON_KEY, Authorization: `Bearer ${token}` };
 
-    // Delete existing
     const existing = photos.find((p) => p.category === category);
     if (existing) {
       await fetch(`${SUPABASE_API_URL}/storage/v1/object/profile-photos/${existing.storage_path}`, {
@@ -263,7 +255,6 @@ export function Popup() {
       });
     }
 
-    // Upload
     const uploadRes = await fetch(`${SUPABASE_API_URL}/storage/v1/object/profile-photos/${filePath}`, {
       method: "POST",
       headers: { ...headers, "Content-Type": file.type },
@@ -271,7 +262,6 @@ export function Popup() {
     });
     if (!uploadRes.ok) { setUploading(null); return; }
 
-    // Insert record
     await fetch(`${SUPABASE_API_URL}/rest/v1/profile_photos`, {
       method: "POST",
       headers: { ...headers, "Content-Type": "application/json", Prefer: "return=minimal" },
@@ -279,14 +269,13 @@ export function Popup() {
     });
 
     setUploading(null);
-    // Trigger photo reload
     setPhotosLoading(true);
     setScreen("profile");
   };
 
   const handleDeletePhoto = async (photo: PhotoRecord) => {
-    const stored = await chrome.storage.local.get("vto_auth_token");
-    const token = stored.vto_auth_token;
+    const stored = await chrome.storage.local.get("cartify_auth_token");
+    const token = stored.cartify_auth_token;
     if (!token) return;
 
     const SUPABASE_API_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -305,23 +294,21 @@ export function Popup() {
   // ── LOADING ──
   if (loading) {
     return (
-      <div className="w-[380px] min-h-[420px] p-5 flex items-center justify-center">
+      <div className="w-[380px] h-[560px] flex items-center justify-center">
         <p className="text-muted-foreground text-sm">Loading…</p>
       </div>
     );
   }
 
-  // ── LOGGED OUT: OAuth Screen ──
+  // ── LOGGED OUT ──
   if (!user) {
     return (
-      <div className="w-[380px] min-h-[480px] p-8 flex flex-col justify-between">
-        {/* Header */}
+      <div className="w-[380px] h-[560px] flex flex-col justify-between p-8">
         <div className="space-y-1 pt-12 text-center">
-          <h1 className="text-[28px] font-semibold tracking-tight text-foreground">VTO</h1>
+          <h1 className="text-[28px] font-semibold tracking-tight text-foreground">Cartify</h1>
           <p className="text-[14px] text-muted-foreground">Try before you buy</p>
         </div>
 
-        {/* OAuth buttons */}
         <div className="space-y-3">
           {authLoading ? (
             <div className="text-center space-y-2">
@@ -345,7 +332,6 @@ export function Popup() {
           )}
         </div>
 
-        {/* Footer */}
         <div className="pb-2 text-center">
           <span className="text-[11px] text-muted-foreground/60">Privacy Policy & Terms</span>
         </div>
@@ -354,8 +340,7 @@ export function Popup() {
   }
 
   // ── LOGGED IN ──
-  const displayName =
-    storedUser?.name || "User";
+  const displayName = storedUser?.name || "User";
   const email = storedUser?.email || "";
   const avatarUrl = storedUser?.avatar_url;
   const initial = displayName.charAt(0).toUpperCase();
@@ -370,7 +355,7 @@ export function Popup() {
 
   return (
     <div className="w-[380px] h-[560px] flex flex-col overflow-hidden">
-      {/* Fixed header: sign out + avatar */}
+      {/* ── Fixed header ── */}
       <div className="shrink-0 px-5 pt-4 pb-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -395,8 +380,8 @@ export function Popup() {
         </div>
       </div>
 
-      {/* Fixed tabs (only on profile screen) */}
-      {screen === "profile" && (
+      {/* ── Fixed tabs (profile) or showroom header ── */}
+      {screen === "profile" ? (
         <div className="shrink-0 px-5 pb-2">
           <p className="text-[11px] text-muted-foreground mb-2">Your photos for virtual try-on</p>
           <div className="flex gap-1 flex-wrap">
@@ -415,10 +400,15 @@ export function Popup() {
             ))}
           </div>
         </div>
+      ) : (
+        <div className="shrink-0 px-5 pb-2 pt-1 text-center">
+          <h2 className="text-[20px] font-semibold tracking-tight text-foreground">Showroom</h2>
+          <p className="mt-1 text-[12px] text-muted-foreground">See how products look on you</p>
+        </div>
       )}
 
-      {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto px-5 pb-3">
+      {/* ── Scrollable content ── */}
+      <div className="flex-1 overflow-y-auto px-5 pb-3 scrollbar-hide">
         {screen === "profile" ? (
           <div className="grid grid-cols-2 gap-3 pt-1">
             {activeGroup.categories.map((cat) => {
@@ -482,104 +472,97 @@ export function Popup() {
             })}
           </div>
         ) : (
-          /* ── SHOWROOM SCREEN ── */
-          <div className="flex flex-col">
-            <div className="pt-1 text-center">
-              <h1 className="text-[20px] font-semibold tracking-tight text-foreground">Showroom</h1>
-              <p className="mt-1 text-[12px] text-muted-foreground">See how products look on you</p>
-            </div>
-
-            <div className="py-3">
-              {resultsLoading ? (
-                <div className="grid grid-cols-2 gap-3">
-                  {[1, 2, 3, 4].map((i) => (
-                    <div key={i} className="aspect-[3/4] rounded-xl bg-secondary animate-pulse" />
-                  ))}
+          /* ── SHOWROOM CONTENT ── */
+          <div className="py-3">
+            {resultsLoading ? (
+              <div className="grid grid-cols-2 gap-3">
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="aspect-[3/4] rounded-xl bg-secondary animate-pulse" />
+                ))}
+              </div>
+            ) : results.length === 0 ? (
+              <div className="flex flex-col items-center justify-center text-center py-10">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary">
+                  <span className="text-[20px] text-muted-foreground">—</span>
                 </div>
-              ) : results.length === 0 ? (
-                <div className="flex flex-col items-center justify-center text-center py-10">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary">
-                    <span className="text-[20px] text-muted-foreground">—</span>
-                  </div>
-                  <p className="mt-3 text-[13px] font-medium text-foreground">Nothing here yet</p>
-                  <p className="mt-1 max-w-[220px] text-[11px] leading-relaxed text-muted-foreground">
-                    Browse any online store and try products on yourself.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {completedResults.length > 0 && (
-                    <div className="grid grid-cols-2 gap-3">
-                      {completedResults.map((r) => (
-                        <div key={r.id} className="group relative">
-                          <img
-                            src={r.result_image_url!}
-                            alt={r.title || "Try-on result"}
-                            className="aspect-[3/4] w-full rounded-xl object-cover"
-                          />
-                          {(r.title || r.price) && (
-                            <div className="mt-1.5 px-0.5">
-                              {r.title && (
-                                <p className="truncate text-[11px] font-medium text-foreground">
-                                  {r.title}
-                                </p>
+                <p className="mt-3 text-[13px] font-medium text-foreground">Nothing here yet</p>
+                <p className="mt-1 max-w-[220px] text-[11px] leading-relaxed text-muted-foreground">
+                  Browse any online store and try products on yourself.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {completedResults.length > 0 && (
+                  <div className="grid grid-cols-2 gap-3">
+                    {completedResults.map((r) => (
+                      <div key={r.id} className="group relative">
+                        <img
+                          src={r.result_image_url!}
+                          alt={r.title || "Try-on result"}
+                          className="aspect-[3/4] w-full rounded-xl object-cover"
+                        />
+                        {(r.title || r.price) && (
+                          <div className="mt-1.5 px-0.5">
+                            {r.title && (
+                              <p className="truncate text-[11px] font-medium text-foreground">
+                                {r.title}
+                              </p>
+                            )}
+                            <div className="flex items-center gap-1.5">
+                              {r.price && (
+                                <span className="text-[10px] text-muted-foreground">{r.price}</span>
                               )}
-                              <div className="flex items-center gap-1.5">
-                                {r.price && (
-                                  <span className="text-[10px] text-muted-foreground">{r.price}</span>
-                                )}
-                                {r.retailer_domain && (
-                                  <span className="text-[10px] text-muted-foreground/50">
-                                    {r.retailer_domain}
-                                  </span>
-                                )}
-                              </div>
+                              {r.retailer_domain && (
+                                <span className="text-[10px] text-muted-foreground/50">
+                                  {r.retailer_domain}
+                                </span>
+                              )}
                             </div>
-                          )}
-                          <a
-                            href={getAffiliateUrl(r)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="mt-1.5 flex w-full items-center justify-center rounded-lg bg-foreground px-3 py-1.5 text-[11px] font-medium text-background transition-opacity hover:opacity-90 no-underline"
-                          >
-                            Add to Cart
-                          </a>
+                          </div>
+                        )}
+                        <a
+                          href={getAffiliateUrl(r)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-1.5 flex w-full items-center justify-center rounded-lg bg-foreground px-3 py-1.5 text-[11px] font-medium text-background transition-opacity hover:opacity-90 no-underline"
+                        >
+                          Add to Cart
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {pendingResults.length > 0 && (
+                  <div>
+                    <p className="mb-3 text-[11px] font-medium text-muted-foreground">
+                      Processing
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {pendingResults.map((r) => (
+                        <div key={r.id} className="relative">
+                          <img
+                            src={r.image_url}
+                            alt={r.title || "Processing"}
+                            className="aspect-[3/4] w-full rounded-xl object-cover opacity-50"
+                          />
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <span className="rounded-lg bg-background/80 px-2 py-1 text-[11px] font-medium text-muted-foreground">
+                              {r.status}
+                            </span>
+                          </div>
                         </div>
                       ))}
                     </div>
-                  )}
-
-                  {pendingResults.length > 0 && (
-                    <div>
-                      <p className="mb-3 text-[11px] font-medium text-muted-foreground">
-                        Processing
-                      </p>
-                      <div className="grid grid-cols-2 gap-3">
-                        {pendingResults.map((r) => (
-                          <div key={r.id} className="relative">
-                            <img
-                              src={r.image_url}
-                              alt={r.title || "Processing"}
-                              className="aspect-[3/4] w-full rounded-xl object-cover opacity-50"
-                            />
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <span className="rounded-lg bg-background/80 px-2 py-1 text-[11px] font-medium text-muted-foreground">
-                                {r.status}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      {/* Fixed bottom nav */}
+      {/* ── Fixed bottom nav ── */}
       <div className="shrink-0 border-t">
         <nav className="flex items-center justify-around px-2 py-2.5">
           <button

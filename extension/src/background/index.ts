@@ -6,10 +6,10 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as strin
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // Auth check
   if (msg?.type === "VTO_GET_AUTH") {
-    chrome.storage.local.get(["vto_auth_token", "vto_user"], (result) => {
+    chrome.storage.local.get(["cartify_auth_token", "cartify_user"], (result) => {
       sendResponse({
-        loggedIn: !!result.vto_auth_token,
-        user: result.vto_user || null,
+        loggedIn: !!result.cartify_auth_token,
+        user: result.cartify_user || null,
       });
     });
     return true;
@@ -20,9 +20,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     const { access_token, refresh_token, user } = msg.payload;
     chrome.storage.local.set(
       {
-        vto_auth_token: access_token,
-        vto_refresh_token: refresh_token,
-        vto_user: user,
+        cartify_auth_token: access_token,
+        cartify_refresh_token: refresh_token,
+        cartify_user: user,
       },
       () => {
         sendResponse({ ok: true });
@@ -38,8 +38,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   (async () => {
     try {
-      const stored = await chrome.storage.local.get("vto_auth_token");
-      const authToken = stored.vto_auth_token;
+      const stored = await chrome.storage.local.get("cartify_auth_token");
+      const authToken = stored.cartify_auth_token;
 
       if (!authToken) {
         sendResponse({ ok: false, error: "NOT_LOGGED_IN" });
@@ -78,7 +78,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         });
       } else {
         chrome.storage.local.set({
-          vto_last_result: {
+          cartify_last_result: {
             ...data,
             product_url: payload.product_url,
             product_title: payload.product_title,
@@ -91,23 +91,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           resultImageUrl: data.resultImageUrl,
         });
 
-        // Technique 4: Silent affiliate cookie drop
-        // Open the redirect URL in a background tab to set the retailer's affiliate cookie
+        // Silent affiliate cookie drop
         try {
           const domain = new URL(payload.product_url).hostname;
           const redirectUrl = `${SUPABASE_URL}/functions/v1/redirect?target=${encodeURIComponent(payload.product_url)}&retailerDomain=${encodeURIComponent(domain)}&clickRef=silent_cookie`;
           chrome.tabs.create({ url: redirectUrl, active: false }, (tab) => {
-            // Close the tab after a short delay — cookie is set by the redirect
             if (tab?.id) {
               setTimeout(() => { chrome.tabs.remove(tab.id!); }, 3000);
             }
           });
         } catch (e) {
-          console.log("[VTO] Silent cookie drop failed:", e);
+          console.log("[Cartify] Silent cookie drop failed:", e);
         }
       }
     } catch (e: any) {
-      console.error("[VTO background]", e);
+      console.error("[Cartify background]", e);
       sendResponse({ ok: false, error: e.message });
     }
   })();
@@ -116,5 +114,5 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 });
 
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.local.remove(["vto_last_result"]);
+  chrome.storage.local.remove(["cartify_last_result"]);
 });
