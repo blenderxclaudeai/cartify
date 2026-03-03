@@ -1,43 +1,20 @@
 
 
-## In-Extension Auth via `chrome.identity.launchWebAuthFlow`
+## Replace Pricing Section with Impact Stats
 
-### What changes
+Replace the "Free to get started" pricing card with a visually striking stats/impact section showing VTO's positive effects on the planet, businesses, and customers.
 
-**`extension/src/lib/auth.ts`** — Replace `chrome.tabs.create` with `chrome.identity.launchWebAuthFlow`:
-- Build the Supabase OAuth URL manually (using the project's Supabase URL + Google provider)
-- Set `redirectTo` to `chrome.identity.getRedirectURL()`
-- Call `launchWebAuthFlow({ url, interactive: true })`
-- Parse the access_token, refresh_token from the callback URL hash fragment
-- Store tokens + user info in `chrome.storage.local`
+### Stats to showcase
 
-**`extension/src/popup/Popup.tsx`** (or wherever the login buttons live) — Update the sign-in handler to `await` the new auth function. On success, immediately show logged-in state. Remove the "Completing sign-in…" intermediate state.
+1. **Planet** — "Up to 30% fewer returns → less shipping → lower carbon emissions." Stat: e.g. "5kg CO₂ saved per avoided return"
+2. **Businesses** — "Retailers lose $816B/year to returns. VTO cuts return rates drastically." Stat: e.g. "$816B lost to returns annually"
+3. **Customers** — "Save time and money by buying right the first time." Stat: e.g. "60% less time deciding"
+4. **Waste reduction** — "Returned items often end up in landfill." Stat: e.g. "9.5B lbs of returns go to landfill yearly"
+5. **Confidence** — "Shoppers who try on buy with more confidence." Stat: e.g. "3× more purchase confidence"
 
-**`extension/manifest.json`** — Already has `identity` permission. Optionally remove the `webAppSync.js` content script entry (keep as fallback if desired).
-
-**`extension/src/content/webAppSync.ts`** — Can be kept as a fallback for edge cases but is no longer the primary auth path.
-
-### Key implementation detail
-
-```text
-Extension Popup
-  → chrome.identity.launchWebAuthFlow(supabaseOAuthUrl)
-  → Chrome auth popup (Google sign-in)
-  → Redirects to https://<ext-id>.chromiumapp.org/#access_token=...
-  → Extension parses tokens from URL
-  → Stores in chrome.storage.local
-  → Popup shows logged-in state
-```
-
-The Supabase OAuth URL is constructed as:
-```
-{SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to={chrome.identity.getRedirectURL()}
-```
-
-No web app involvement. No external tabs. Fully self-contained.
+### Layout
+A section with a heading like "The impact of trying before buying" and a grid of 4-5 stat cards, each with a large number, a short label, and a one-line description. Clean, monochrome, consistent with the existing design language. No pricing card.
 
 ### Files to change
-1. `extension/src/lib/auth.ts` — Core auth rewrite
-2. `extension/src/popup/Popup.tsx` — Update login flow UX
-3. `extension/manifest.json` — Optional cleanup of webAppSync content script
+- `src/pages/LandingPage.tsx` — Replace the pricing section content with the stats grid
 
