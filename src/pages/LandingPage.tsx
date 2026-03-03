@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -11,11 +12,33 @@ import {
   Chrome,
   Star,
   ArrowRight,
+  ArrowLeft,
   MousePointerClick,
   ScanEye,
   ShoppingBag,
 } from "lucide-react";
 import { Link } from "react-router-dom";
+
+// Product images
+import imgJacket from "@/assets/products/jacket.png";
+import imgNecklace from "@/assets/products/necklace.png";
+import imgSneakers from "@/assets/products/sneakers.png";
+import imgSunglasses from "@/assets/products/sunglasses.png";
+import imgDress from "@/assets/products/dress.png";
+import imgWatch from "@/assets/products/watch.png";
+import imgLamp from "@/assets/products/lamp.png";
+import imgHandbag from "@/assets/products/handbag.png";
+import imgRing from "@/assets/products/ring.png";
+import imgPlanter from "@/assets/products/planter.png";
+import imgBlazer from "@/assets/products/blazer.png";
+import imgChair from "@/assets/products/chair.png";
+import imgHeels from "@/assets/products/heels.png";
+import imgJeans from "@/assets/products/jeans.png";
+import imgVase from "@/assets/products/vase.png";
+import imgHat from "@/assets/products/hat.png";
+import imgBracelet from "@/assets/products/bracelet.png";
+import imgCushion from "@/assets/products/cushion.png";
+import imgBoots from "@/assets/products/boots.png";
 
 /* ------------------------------------------------------------------ */
 /*  Data                                                               */
@@ -43,33 +66,28 @@ const steps = [
 ];
 
 const tryOnCategories = [
-  { label: "Dresses", emoji: "👗" },
-  { label: "Sneakers", emoji: "👟" },
-  { label: "Watches", emoji: "⌚" },
-  { label: "Sunglasses", emoji: "🕶️" },
-  { label: "Handbags", emoji: "👜" },
-  { label: "Sofas", emoji: "🛋️" },
-  { label: "Rings", emoji: "💍" },
-  { label: "Jackets", emoji: "🧥" },
-  { label: "Earrings", emoji: "✨" },
-  { label: "Rugs", emoji: "🏠" },
-  { label: "Hats", emoji: "🎩" },
-  { label: "Boots", emoji: "🥾" },
+  { label: "Dresses", img: imgDress },
+  { label: "Sneakers", img: imgSneakers },
+  { label: "Watches", img: imgWatch },
+  { label: "Sunglasses", img: imgSunglasses },
+  { label: "Handbags", img: imgHandbag },
+  { label: "Rings", img: imgRing },
+  { label: "Jackets", img: imgJacket },
+  { label: "Lamps", img: imgLamp },
+  { label: "Hats", img: imgHat },
+  { label: "Boots", img: imgBoots },
 ];
 
 const tryOnCategories2 = [
-  { label: "Necklaces", emoji: "📿" },
-  { label: "T-Shirts", emoji: "👕" },
-  { label: "Lamps", emoji: "💡" },
-  { label: "Bracelets", emoji: "⭐" },
-  { label: "Jeans", emoji: "👖" },
-  { label: "Vases", emoji: "🏺" },
-  { label: "Coats", emoji: "🧣" },
-  { label: "Chairs", emoji: "🪑" },
-  { label: "Heels", emoji: "👠" },
-  { label: "Planters", emoji: "🌿" },
-  { label: "Blazers", emoji: "🤵" },
-  { label: "Curtains", emoji: "🪟" },
+  { label: "Necklaces", img: imgNecklace },
+  { label: "Blazers", img: imgBlazer },
+  { label: "Planters", img: imgPlanter },
+  { label: "Bracelet", img: imgBracelet },
+  { label: "Jeans", img: imgJeans },
+  { label: "Vases", img: imgVase },
+  { label: "Chairs", img: imgChair },
+  { label: "Heels", img: imgHeels },
+  { label: "Cushions", img: imgCushion },
 ];
 
 const reviews = [
@@ -164,6 +182,8 @@ function Stars({ count }: { count: number }) {
 /* ------------------------------------------------------------------ */
 
 export default function LandingPage() {
+  const reviewsRef = useRef<HTMLDivElement>(null);
+
   return (
     <div className="min-h-screen bg-background text-foreground font-sans">
       {/* ---- Nav ---- */}
@@ -283,10 +303,10 @@ export default function LandingPage() {
             {[...tryOnCategories, ...tryOnCategories].map((c, i) => (
               <div
                 key={i}
-                className="mx-2 flex h-28 w-40 shrink-0 flex-col items-center justify-center rounded-xl border bg-card text-center transition-shadow hover:shadow-md sm:h-32 sm:w-48"
+                className="mx-2 flex h-36 w-36 shrink-0 flex-col items-center justify-center rounded-xl border bg-card text-center transition-shadow hover:shadow-md sm:h-44 sm:w-44"
               >
-                <span className="text-3xl">{c.emoji}</span>
-                <span className="mt-2 text-xs font-medium text-foreground">{c.label}</span>
+                <img src={c.img} alt={c.label} className="h-24 w-24 object-contain sm:h-32 sm:w-32" />
+                <span className="mt-1 text-xs font-medium text-foreground">{c.label}</span>
               </div>
             ))}
           </div>
@@ -300,24 +320,51 @@ export default function LandingPage() {
             {[...tryOnCategories2, ...tryOnCategories2].map((c, i) => (
               <div
                 key={i}
-                className="mx-2 flex h-28 w-40 shrink-0 flex-col items-center justify-center rounded-xl border bg-card text-center transition-shadow hover:shadow-md sm:h-32 sm:w-48"
+                className="mx-2 flex h-36 w-36 shrink-0 flex-col items-center justify-center rounded-xl border bg-card text-center transition-shadow hover:shadow-md sm:h-44 sm:w-44"
               >
-                <span className="text-3xl">{c.emoji}</span>
-                <span className="mt-2 text-xs font-medium text-foreground">{c.label}</span>
+                <img src={c.img} alt={c.label} className="h-24 w-24 object-contain sm:h-32 sm:w-32" />
+                <span className="mt-1 text-xs font-medium text-foreground">{c.label}</span>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ---- Reviews — horizontal scroll big cards ---- */}
+      {/* ---- Reviews — horizontal scroll with arrows ---- */}
       <section className="border-t bg-muted/30 py-20">
-        <div className="mx-auto max-w-5xl px-6">
-          <h2 className="text-center text-2xl font-semibold tracking-tight sm:text-3xl font-display">
+        <div className="mx-auto max-w-5xl px-6 flex items-center justify-between">
+          <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl font-display">
             What people are saying
           </h2>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-9 w-9 rounded-full"
+              onClick={() => {
+                const el = reviewsRef.current;
+                if (el) el.scrollBy({ left: -420, behavior: "smooth" });
+              }}
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-9 w-9 rounded-full"
+              onClick={() => {
+                const el = reviewsRef.current;
+                if (el) el.scrollBy({ left: 420, behavior: "smooth" });
+              }}
+            >
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
-        <div className="mt-12 flex gap-5 overflow-x-auto px-6 pb-4 snap-x snap-mandatory scrollbar-hide sm:px-[max(1.5rem,calc((100vw-64rem)/2+1.5rem))]">
+        <div
+          ref={reviewsRef}
+          className="mt-10 flex gap-5 overflow-x-auto px-6 pb-4 snap-x snap-mandatory scrollbar-hide sm:px-[max(1.5rem,calc((100vw-64rem)/2+1.5rem))]"
+        >
           {reviews.map((r, i) => (
             <Card key={i} className="min-w-[320px] max-w-[380px] shrink-0 snap-center border bg-background sm:min-w-[400px]">
               <CardContent className="flex h-full flex-col justify-between gap-5 p-8 sm:p-10">
