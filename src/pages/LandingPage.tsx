@@ -52,38 +52,50 @@ const features = [
   {
     icon: Sparkles,
     title: "AI-Powered",
+    number: "< 15s",
+    subtitle: "per try-on",
     description:
-      "State-of-the-art generative AI creates photorealistic try-on results in seconds.",
+      "State-of-the-art generative AI creates photorealistic results.",
   },
   {
     icon: Globe,
-    title: "Works on any store",
+    title: "Works everywhere",
+    number: "Any",
+    subtitle: "online store",
     description:
-      "No integrations needed. VTO detects products on virtually any e-commerce site.",
+      "No integrations needed. VTO detects products automatically.",
   },
   {
     icon: Camera,
-    title: "Your photos, your style",
+    title: "Your photos",
+    number: "1x",
+    subtitle: "upload, reuse forever",
     description:
-      "Upload photos of yourself once and reuse them across every try-on session.",
+      "Upload photos once and reuse them across every session.",
   },
   {
     icon: Heart,
-    title: "Save to Showroom",
+    title: "Showroom",
+    number: "\u221E",
+    subtitle: "saved try-ons",
     description:
-      "Keep a personal gallery of your favourite try-ons to compare and decide later.",
+      "Keep a personal gallery to compare and decide later.",
   },
   {
     icon: ShieldCheck,
     title: "Privacy first",
+    number: "0",
+    subtitle: "data shared",
     description:
-      "Your photos are encrypted and never shared. Delete them anytime.",
+      "Your photos are encrypted and never shared. Delete anytime.",
   },
   {
     icon: Zap,
     title: "Lightning fast",
+    number: "3",
+    subtitle: "simple steps",
     description:
-      "Results in under 15 seconds so you can keep browsing without interruption.",
+      "Browse, click, see. No friction, no interruption.",
   },
 ];
 
@@ -279,52 +291,62 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ---- Features ---- */}
+      {/* ---- Features — stat-driven layout ---- */}
       <section className="border-t py-20">
         <div className="mx-auto max-w-5xl px-6">
           <h2 className="text-center text-2xl font-semibold tracking-tight sm:text-3xl font-display">
-            Everything you need
+            Built different
           </h2>
-          <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <p className="mx-auto mt-3 max-w-md text-center text-sm text-muted-foreground">
+            Not another generic tool. Here is what sets VTO apart.
+          </p>
+          <div className="mt-14 grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-3">
             {features.map((f, i) => (
-              <Card key={i} className="border bg-background">
-                <CardContent className="p-5">
-                  <f.icon className="h-5 w-5 text-foreground" />
-                  <h3 className="mt-3 text-sm font-medium">{f.title}</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">
+              <div
+                key={i}
+                className="flex flex-col items-start gap-3 bg-background p-6 sm:p-8"
+              >
+                <f.icon className="h-4 w-4 text-muted-foreground" />
+                <div>
+                  <span className="text-3xl font-bold tracking-tight font-display sm:text-4xl">
+                    {f.number}
+                  </span>
+                  <p className="text-xs text-muted-foreground">{f.subtitle}</p>
+                </div>
+                <div>
+                  <h3 className="text-sm font-medium">{f.title}</h3>
+                  <p className="mt-0.5 text-xs text-muted-foreground leading-relaxed">
                     {f.description}
                   </p>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ---- Reviews ---- */}
+      {/* ---- Reviews — large vertical scroll cards ---- */}
       <section className="border-t bg-muted/30 py-20">
-        <div className="mx-auto max-w-5xl px-6">
+        <div className="mx-auto max-w-2xl px-6">
           <h2 className="text-center text-2xl font-semibold tracking-tight sm:text-3xl font-display">
             What people are saying
           </h2>
-          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-12 flex flex-col gap-5">
             {reviews.map((r, i) => (
               <Card key={i} className="border bg-background">
-                <CardContent className="p-5">
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-8 w-8">
-                      <AvatarFallback className="text-xs">
+                <CardContent className="flex flex-col gap-4 p-8 sm:p-10">
+                  <Stars count={r.rating} />
+                  <p className="text-lg font-medium leading-relaxed sm:text-xl">
+                    "{r.text}"
+                  </p>
+                  <div className="flex items-center gap-3 pt-2">
+                    <Avatar className="h-9 w-9">
+                      <AvatarFallback className="text-xs font-medium">
                         {r.initials}
                       </AvatarFallback>
                     </Avatar>
-                    <div>
-                      <p className="text-sm font-medium">{r.name}</p>
-                      <Stars count={r.rating} />
-                    </div>
+                    <p className="text-sm text-muted-foreground">{r.name}</p>
                   </div>
-                  <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
-                    "{r.text}"
-                  </p>
                 </CardContent>
               </Card>
             ))}
