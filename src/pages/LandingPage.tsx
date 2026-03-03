@@ -388,47 +388,32 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ---- Pricing ---- */}
+      {/* ---- Impact Stats ---- */}
       <section className="border-t py-20">
-        <div className="mx-auto max-w-md px-6 text-center">
-          <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl font-display">
-            Free to get started
+        <div className="mx-auto max-w-5xl px-6">
+          <h2 className="text-center text-2xl font-semibold tracking-tight sm:text-3xl font-display">
+            The impact of trying before buying
           </h2>
-          <p className="mt-3 text-sm text-muted-foreground">
-            No credit card required. Install the extension and start trying on
-            products today.
+          <p className="mx-auto mt-3 max-w-lg text-center text-sm text-muted-foreground">
+            VTO helps the planet, businesses, and shoppers — one virtual try-on at a time.
           </p>
-          <Card className="mt-8 border">
-            <CardContent className="p-6">
-              <p className="text-3xl font-bold">$0</p>
-              <p className="mt-1 text-sm text-muted-foreground">per month</p>
-              <ul className="mt-5 space-y-2 text-left text-sm">
-                {[
-                  "Generous monthly try-on quota",
-                  "Works on all stores",
-                  "Save to your Showroom",
-                  "Multiple profile photos",
-                  "Cashback on qualifying purchases",
-                ].map((item, i) => (
-                  <li key={i} className="flex items-start gap-2">
-                    <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-foreground" />
-                    {item}
-                  </li>
-                ))}
-              </ul>
-              <a
-                href="https://chrome.google.com/webstore"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-6 block"
-              >
-                <Button className="w-full gap-2">
-                  <Chrome className="h-4 w-4" />
-                  Get VTO for free
-                </Button>
-              </a>
-            </CardContent>
-          </Card>
+          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              { stat: "5 kg", label: "CO₂ saved", desc: "Per return avoided — less shipping, lower emissions." },
+              { stat: "$816B", label: "Lost to returns", desc: "Retailers lose billions yearly. VTO cuts return rates drastically." },
+              { stat: "9.5B lbs", label: "Landfill waste", desc: "Returned items often end up in landfill. Try-on helps prevent that." },
+              { stat: "60%", label: "Less time deciding", desc: "Shoppers buy faster and smarter when they can see it on themselves." },
+              { stat: "3×", label: "More confidence", desc: "Customers who try on purchase with significantly more certainty." },
+            ].map((s, i) => (
+              <Card key={i} className="border bg-background">
+                <CardContent className="p-6 sm:p-8">
+                  <p className="text-3xl font-bold tracking-tight font-display">{s.stat}</p>
+                  <p className="mt-1 text-sm font-medium">{s.label}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">{s.desc}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </div>
       </section>
 
