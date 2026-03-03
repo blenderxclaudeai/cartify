@@ -1,8 +1,8 @@
 import type { TryOnResponse } from "@ext/lib/types";
 
-const BUTTON_ID = "vto-tryon-btn";
-const PILL_ID = "vto-login-pill";
-const MODAL_ID = "vto-modal-overlay";
+const BUTTON_ID = "cartify-tryon-btn";
+const PILL_ID = "cartify-login-pill";
+const MODAL_ID = "cartify-modal-overlay";
 
 export function injectButton(onClick: () => void): HTMLButtonElement {
   const existing = document.getElementById(BUTTON_ID) as HTMLButtonElement | null;
@@ -40,7 +40,7 @@ export function injectLoginPill(): void {
   if (document.getElementById(PILL_ID)) return;
   const pill = document.createElement("div");
   pill.id = PILL_ID;
-  pill.textContent = "Log in to VTO to try on";
+  pill.textContent = "Log in to Cartify to try on";
   Object.assign(pill.style, {
     position: "fixed",
     bottom: "24px",
@@ -56,8 +56,8 @@ export function injectLoginPill(): void {
     cursor: "pointer",
   });
   pill.addEventListener("click", () => {
-    pill.textContent = "Click the VTO icon in toolbar";
-    setTimeout(() => { pill.textContent = "Log in to VTO to try on"; }, 3000);
+    pill.textContent = "Click the Cartify icon in toolbar";
+    setTimeout(() => { pill.textContent = "Log in to Cartify to try on"; }, 3000);
   });
   document.body.appendChild(pill);
 }
@@ -84,14 +84,14 @@ export function showModal() {
     boxShadow: "0 20px 60px rgba(0,0,0,0.3)", textAlign: "center", color: "#171717",
   });
   card.innerHTML = `
-    <h2 style="margin:0 0 4px;font-size:18px;font-weight:700;">VTO Preview</h2>
+    <h2 style="margin:0 0 4px;font-size:18px;font-weight:700;">Cartify Preview</h2>
     <p style="margin:0 0 16px;font-size:13px;color:#737373;">Generating your try-on...</p>
-    <div id="vto-modal-body" style="min-height:200px;display:flex;align-items:center;justify-content:center;">
-      <div style="width:32px;height:32px;border:3px solid #e5e5e5;border-top-color:#171717;border-radius:50%;animation:vto-spin 0.8s linear infinite;"></div>
+    <div id="cartify-modal-body" style="min-height:200px;display:flex;align-items:center;justify-content:center;">
+      <div style="width:32px;height:32px;border:3px solid #e5e5e5;border-top-color:#171717;border-radius:50%;animation:cartify-spin 0.8s linear infinite;"></div>
     </div>
   `;
   const style = document.createElement("style");
-  style.textContent = `@keyframes vto-spin{to{transform:rotate(360deg)}}`;
+  style.textContent = `@keyframes cartify-spin{to{transform:rotate(360deg)}}`;
   card.appendChild(style);
 
   overlay.addEventListener("click", (e) => { if (e.target === overlay) removeModal(); });
@@ -110,11 +110,11 @@ export function setModalProduct(productUrl: string, supabaseUrl: string) {
 }
 
 export function updateModalSuccess(result: TryOnResponse) {
-  const body = document.getElementById("vto-modal-body");
+  const body = document.getElementById("cartify-modal-body");
   if (!body) return;
 
   const buyBtnHtml = _affiliateRedirectUrl
-    ? `<a id="vto-modal-buy" href="${_affiliateRedirectUrl}" target="_blank" rel="noopener" style="display:inline-block;padding:10px 28px;border:none;border-radius:8px;background:#171717;color:#fff;font-size:14px;font-weight:700;cursor:pointer;text-decoration:none;margin-bottom:8px;">Buy This Item</a>`
+    ? `<a id="cartify-modal-buy" href="${_affiliateRedirectUrl}" target="_blank" rel="noopener" style="display:inline-block;padding:10px 28px;border:none;border-radius:8px;background:#171717;color:#fff;font-size:14px;font-weight:700;cursor:pointer;text-decoration:none;margin-bottom:8px;">Buy This Item</a>`
     : "";
 
   if (result.resultImageUrl) {
@@ -123,7 +123,7 @@ export function updateModalSuccess(result: TryOnResponse) {
         <img src="${result.resultImageUrl}" alt="Try-on result" style="width:100%;max-height:400px;object-fit:contain;border-radius:8px;margin-bottom:12px;" />
         <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
           ${buyBtnHtml}
-          <button id="vto-modal-close" style="padding:8px 24px;border:none;border-radius:8px;background:transparent;color:#737373;font-size:12px;font-weight:500;cursor:pointer;">Close</button>
+          <button id="cartify-modal-close" style="padding:8px 24px;border:none;border-radius:8px;background:transparent;color:#737373;font-size:12px;font-weight:500;cursor:pointer;">Close</button>
         </div>
       </div>
     `;
@@ -133,20 +133,20 @@ export function updateModalSuccess(result: TryOnResponse) {
         <p style="font-size:14px;color:#171717;margin:0 0 12px;">Try-on request submitted!</p>
         <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
           ${buyBtnHtml}
-          <button id="vto-modal-close" style="padding:8px 24px;border:none;border-radius:8px;background:transparent;color:#737373;font-size:12px;font-weight:500;cursor:pointer;">Close</button>
+          <button id="cartify-modal-close" style="padding:8px 24px;border:none;border-radius:8px;background:transparent;color:#737373;font-size:12px;font-weight:500;cursor:pointer;">Close</button>
         </div>
       </div>
     `;
   }
-  document.getElementById("vto-modal-close")?.addEventListener("click", closeModalWithRedirect);
+  document.getElementById("cartify-modal-close")?.addEventListener("click", closeModalWithRedirect);
 }
 
 export function updateModalError(errorMsg: string, missingPhoto?: string) {
-  const body = document.getElementById("vto-modal-body");
+  const body = document.getElementById("cartify-modal-body");
   if (!body) return;
 
   const missingPhotoHtml = missingPhoto
-    ? `<p style="font-size:12px;color:#737373;margin:8px 0 0;">Open the VTO extension and upload a photo of your <strong>${missingPhoto}</strong> in your profile to try on this product.</p>`
+    ? `<p style="font-size:12px;color:#737373;margin:8px 0 0;">Open the Cartify extension and upload a photo of your <strong>${missingPhoto}</strong> in your profile to try on this product.</p>`
     : "";
 
   body.innerHTML = `
@@ -155,23 +155,22 @@ export function updateModalError(errorMsg: string, missingPhoto?: string) {
       <p style="font-size:12px;color:#737373;margin:0 0 8px;">${errorMsg}</p>
       ${missingPhotoHtml}
       <div style="display:flex;gap:8px;justify-content:center;margin-top:16px;">
-        <button id="vto-modal-retry" style="padding:8px 20px;border:1px solid #e5e5e5;border-radius:8px;background:#fff;color:#171717;font-size:13px;font-weight:500;cursor:pointer;">Retry</button>
-        <button id="vto-modal-close" style="padding:8px 20px;border:none;border-radius:8px;background:#171717;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">Close</button>
+        <button id="cartify-modal-retry" style="padding:8px 20px;border:1px solid #e5e5e5;border-radius:8px;background:#fff;color:#171717;font-size:13px;font-weight:500;cursor:pointer;">Retry</button>
+        <button id="cartify-modal-close" style="padding:8px 20px;border:none;border-radius:8px;background:#171717;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">Close</button>
       </div>
     </div>
   `;
-  document.getElementById("vto-modal-close")?.addEventListener("click", closeModalWithRedirect);
+  document.getElementById("cartify-modal-close")?.addEventListener("click", closeModalWithRedirect);
 }
 
 export function getRetryButton(): HTMLElement | null {
-  return document.getElementById("vto-modal-retry");
+  return document.getElementById("cartify-modal-retry");
 }
 
 /** Technique 5: Redirect page through affiliate link when modal closes */
 function closeModalWithRedirect() {
   document.getElementById(MODAL_ID)?.remove();
   if (_affiliateRedirectUrl && _currentProductUrl) {
-    // Navigate the page through the affiliate redirect — sets the cookie
     window.location.href = _affiliateRedirectUrl;
   }
   _currentProductUrl = null;

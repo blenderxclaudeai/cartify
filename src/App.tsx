@@ -10,6 +10,7 @@ import Showroom from "./pages/Showroom";
 import AdminPage from "./pages/AdminPage";
 import NotFound from "./pages/NotFound";
 import LandingPage from "./pages/LandingPage";
+import AuthCallback from "./pages/AuthCallback";
 
 const queryClient = new QueryClient();
 
@@ -30,6 +31,7 @@ const App = () => (
         <AuthProvider>
           <Routes>
             <Route path="/" element={<LandingPage />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/showroom" element={<ProtectedRoute><Showroom /></ProtectedRoute>} />
             <Route path="/admin" element={<AdminRoute><AdminPage /></AdminRoute>} />

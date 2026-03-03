@@ -50,13 +50,13 @@ const steps = [
     icon: ShoppingBag,
     title: "Browse any store",
     description:
-      "Shop as you normally would on any online retailer. VTO works everywhere.",
+      "Shop as you normally would on any online retailer. Cartify works everywhere.",
   },
   {
     icon: MousePointerClick,
     title: "Click Try On",
     description:
-      "See a product you like? Hit the VTO button that appears on the page.",
+      "See a product you like? Hit the Cartify button that appears on the page.",
   },
   {
     icon: ScanEye,
@@ -96,7 +96,7 @@ const reviews = [
     name: "Sarah M.",
     initials: "SM",
     rating: 5,
-    text: "I used to return 60% of what I ordered. Since installing VTO, my return rate dropped to almost zero. Game changer.",
+    text: "I used to return 60% of what I ordered. Since installing Cartify, my return rate dropped to almost zero. Game changer.",
   },
   {
     name: "James L.",
@@ -120,7 +120,7 @@ const reviews = [
     name: "Aisha D.",
     initials: "AD",
     rating: 5,
-    text: "I was sceptical about AI try-on but VTO genuinely looks realistic. Shared it with all my friends.",
+    text: "I was sceptical about AI try-on but Cartify genuinely looks realistic. Shared it with all my friends.",
   },
   {
     name: "Marcus W.",
@@ -132,20 +132,20 @@ const reviews = [
 
 const faqs = [
   {
-    q: "How does VTO work?",
-    a: "VTO uses generative AI to combine a photo of you with a product image from any online store, producing a realistic visualisation of you wearing or using the item.",
+    q: "How does Cartify work?",
+    a: "Cartify uses generative AI to combine a photo of you with a product image from any online store, producing a realistic visualisation of you wearing or using the item.",
   },
   {
     q: "Which stores are supported?",
-    a: "VTO works on virtually any e-commerce website. It automatically detects product images so there is no store-specific setup required.",
+    a: "Cartify works on virtually any e-commerce website. It automatically detects product images so there is no store-specific setup required.",
   },
   {
     q: "Is my data safe?",
     a: "Yes. Your photos are encrypted in transit and at rest. They are never shared with third parties and you can delete them at any time from your profile.",
   },
   {
-    q: "Is VTO free?",
-    a: "VTO is free to get started. You get a generous number of monthly try-ons at no cost. Premium plans will be available in the future for power users.",
+    q: "Is Cartify free?",
+    a: "Cartify is free to get started. You get a generous number of monthly try-ons at no cost. Premium plans will be available in the future for power users.",
   },
   {
     q: "What kind of products can I try on?",
@@ -191,7 +191,7 @@ export default function LandingPage() {
       <nav className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-6">
           <span className="text-lg font-semibold tracking-tight font-display">
-            VTO
+            Cartify
           </span>
           <a
             href="https://chrome.google.com/webstore"
@@ -212,7 +212,7 @@ export default function LandingPage() {
           Try before you buy — on&nbsp;any&nbsp;store
         </h1>
         <p className="mx-auto mt-5 max-w-lg text-base text-muted-foreground sm:text-lg">
-          VTO is a free Chrome extension that lets you virtually try on clothes,
+          Cartify is a free Chrome extension that lets you virtually try on clothes,
           accessories, and more using AI. See how products look on you in
           seconds.
         </p>
@@ -297,9 +297,9 @@ export default function LandingPage() {
             {[...tryOnCategories, ...tryOnCategories].map((c, i) => (
               <div
                 key={i}
-                className="mx-2 flex h-36 w-36 shrink-0 flex-col items-center justify-center rounded-xl border bg-background text-center transition-shadow hover:shadow-md sm:h-44 sm:w-44"
+                className="mx-2 flex h-36 w-36 shrink-0 flex-col items-center justify-center rounded-xl border bg-white text-center transition-shadow hover:shadow-md sm:h-44 sm:w-44"
               >
-                <img src={c.img} alt={c.label} className="h-24 w-24 object-contain sm:h-32 sm:w-32" />
+                <img src={c.img} alt={c.label} className="h-24 w-24 object-contain sm:h-32 sm:w-32 mix-blend-multiply" />
                 <span className="mt-1 text-xs font-medium text-foreground">{c.label}</span>
               </div>
             ))}
@@ -314,9 +314,9 @@ export default function LandingPage() {
             {[...tryOnCategories2, ...tryOnCategories2].map((c, i) => (
               <div
                 key={i}
-                className="mx-2 flex h-36 w-36 shrink-0 flex-col items-center justify-center rounded-xl border bg-background text-center transition-shadow hover:shadow-md sm:h-44 sm:w-44"
+                className="mx-2 flex h-36 w-36 shrink-0 flex-col items-center justify-center rounded-xl border bg-white text-center transition-shadow hover:shadow-md sm:h-44 sm:w-44"
               >
-                <img src={c.img} alt={c.label} className="h-24 w-24 object-contain sm:h-32 sm:w-32" />
+                <img src={c.img} alt={c.label} className="h-24 w-24 object-contain sm:h-32 sm:w-32 mix-blend-multiply" />
                 <span className="mt-1 text-xs font-medium text-foreground">{c.label}</span>
               </div>
             ))}
@@ -410,7 +410,7 @@ export default function LandingPage() {
       <footer className="border-t py-10">
         <div className="mx-auto flex max-w-5xl flex-col items-center gap-4 px-6 text-center text-xs text-muted-foreground sm:flex-row sm:justify-between sm:text-left">
           <span className="font-medium text-foreground text-sm font-display">
-            VTO
+            Cartify
           </span>
           <div className="flex gap-4">
             <a href="#how-it-works" className="hover:text-foreground transition-colors">
@@ -425,7 +425,7 @@ export default function LandingPage() {
               Chrome Web Store
             </a>
           </div>
-          <span>&copy; {new Date().getFullYear()} VTO. All rights reserved.</span>
+          <span>&copy; {new Date().getFullYear()} Cartify. All rights reserved.</span>
         </div>
       </footer>
     </div>

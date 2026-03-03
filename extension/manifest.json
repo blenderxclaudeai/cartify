@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "VTO — Virtual Try-On",
+  "name": "Cartify — Virtual Try-On",
   "version": "1.0.0",
   "description": "Try products on yourself before you buy.",
   "permissions": ["storage", "activeTab", "identity", "tabs"],
