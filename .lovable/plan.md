@@ -1,19 +1,29 @@
 
 
-## Plan: Add Response Diagnostics + User-Friendly Bias Error Message
+## Landing Page for VTO (Virtual Try-On)
 
-### What to change — `supabase/functions/tryon-request/index.ts`
+A public landing page at `/` matching the app's monochrome, clean design system. No login required.
 
-**1. Add response diagnostics logging (lines ~438-442)**
-When Step 2 produces no image, log the full response structure: content types, text content, and all message keys. This is critical to understand what the model actually returns on silent refusal.
+### Sections (top to bottom)
 
-**2. Update the failure error message (lines 454-461)**
-When both attempts fail with no image and no explicit refusal, return a specific user-friendly message:
+1. **Hero** - Product name "VTO", tagline, Chrome Web Store download button, and a mock screenshot of the extension in action
+2. **How it works** - 3-step visual walkthrough: Browse any store → Click Try On → See it on you
+3. **Features** - Grid of 4-6 key features (AI-powered, works on any store, save to showroom, etc.) with lucide icons
+4. **Reviews / Testimonials** - Carousel or grid of user quotes with name, avatar placeholder, and star rating (hardcoded mock data for now)
+5. **Pricing** - Simple card showing free tier info
+6. **FAQ** - Accordion with common questions
+7. **Footer** - Links, copyright, social placeholders
 
-> "The AI model's safety filters blocked this try-on. This can happen when the AI detects differences in gender or ethnicity between you and the product image — a limitation of the current AI model, not something we agree with. We're working on it. Please try a different product or photo."
+### Route changes
+- `src/App.tsx`: Change `/` from redirecting to `/profile` → render the new `LandingPage` component (public, no auth)
+- Keep `/profile` redirect for logged-in users handled inside the landing page itself (optional CTA)
 
-Keep the existing flow (2 attempts, same model, same prompts) — no model fallback changes.
+### New files
+- `src/pages/LandingPage.tsx` - Full landing page with all sections above
 
-### Files changed
-- `supabase/functions/tryon-request/index.ts` only
+### Design
+- Same monochrome palette, SF Pro font stack, rounded corners, subtle borders
+- No emojis in any UI element
+- Responsive: looks good full-width on desktop, stacks on mobile
+- Consistent with the 400x600 extension aesthetic but expanded to full viewport
 
