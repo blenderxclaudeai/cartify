@@ -5,7 +5,7 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as strin
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // Auth check
-  if (msg?.type === "VTO_GET_AUTH") {
+  if (msg?.type === "CARTIFY_GET_AUTH") {
     chrome.storage.local.get(["cartify_auth_token", "cartify_user"], (result) => {
       sendResponse({
         loggedIn: !!result.cartify_auth_token,
@@ -16,7 +16,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   // Session sync from web app content script
-  if (msg?.type === "VTO_SESSION_FROM_WEB") {
+  if (msg?.type === "CARTIFY_SESSION_FROM_WEB") {
     const { access_token, refresh_token, user } = msg.payload;
     chrome.storage.local.set(
       {
@@ -32,7 +32,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   // Try-on request
-  if (msg?.type !== "VTO_TRYON_REQUEST") return;
+  if (msg?.type !== "CARTIFY_TRYON_REQUEST") return;
 
   const { payload } = msg;
 
