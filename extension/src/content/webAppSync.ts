@@ -38,7 +38,7 @@ function trySendSession() {
 
   chrome.runtime.sendMessage(
     {
-      type: "VTO_SESSION_FROM_WEB",
+      type: "CARTIFY_SESSION_FROM_WEB",
       payload: {
         access_token: session.access_token,
         refresh_token: session.refresh_token,

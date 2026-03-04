@@ -40,7 +40,7 @@ export function injectLoginPill(): void {
   if (document.getElementById(PILL_ID)) return;
   const pill = document.createElement("div");
   pill.id = PILL_ID;
-  pill.textContent = "Log in to Cartify to try on";
+  pill.textContent = "Log in";
   Object.assign(pill.style, {
     position: "fixed",
     bottom: "24px",
@@ -57,7 +57,7 @@ export function injectLoginPill(): void {
   });
   pill.addEventListener("click", () => {
     pill.textContent = "Click the Cartify icon in toolbar";
-    setTimeout(() => { pill.textContent = "Log in to Cartify to try on"; }, 3000);
+    setTimeout(() => { pill.textContent = "Log in"; }, 3000);
   });
   document.body.appendChild(pill);
 }

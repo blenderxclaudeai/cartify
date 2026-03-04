@@ -60,7 +60,7 @@ function evaluatePage() {
     return;
   }
 
-  chrome.runtime.sendMessage({ type: "VTO_GET_AUTH" }, (response) => {
+  chrome.runtime.sendMessage({ type: "CARTIFY_GET_AUTH" }, (response) => {
     if (chrome.runtime.lastError) {
       console.log("[Cartify] Extension context error:", chrome.runtime.lastError.message);
       return;
@@ -113,7 +113,7 @@ function doTryOn() {
   setModalProduct(product.product_url, SUPABASE_URL);
 
   chrome.runtime.sendMessage(
-    { type: "VTO_TRYON_REQUEST", payload: product },
+    { type: "CARTIFY_TRYON_REQUEST", payload: product },
     (response) => {
       if (chrome.runtime.lastError) {
         updateModalError(chrome.runtime.lastError.message || "Extension error");

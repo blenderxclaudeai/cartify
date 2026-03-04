@@ -4,7 +4,7 @@ import { signInWithOAuth, signOut, getStoredUser } from "@ext/lib/auth";
 const APP_URL = import.meta.env.VITE_APP_URL || "https://ddsasdkse.lovable.app";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
-type Screen = "profile" | "showroom";
+type Screen = "profile" | "showroom" | "settings";
 
 interface StoredUser {
   id: string;
@@ -31,57 +31,15 @@ interface PhotoRecord {
   signedUrl?: string;
 }
 
-const CATEGORY_GROUPS = [
-  {
-    key: "you",
-    label: "You",
-    categories: [
-      { key: "full_body", label: "Full Body" },
-      { key: "upper_body", label: "Upper Body" },
-      { key: "face", label: "Face" },
-      { key: "hands", label: "Hands" },
-      { key: "fingers", label: "Fingers" },
-      { key: "nails", label: "Nails" },
-      { key: "hair", label: "Hair" },
-      { key: "ears", label: "Ears" },
-    ],
-  },
-  {
-    key: "home",
-    label: "Home",
-    categories: [
-      { key: "living_room", label: "Living Room" },
-      { key: "kitchen", label: "Kitchen" },
-      { key: "bedroom", label: "Bedroom" },
-      { key: "bathroom", label: "Bathroom" },
-      { key: "office", label: "Office" },
-    ],
-  },
-  {
-    key: "pets",
-    label: "Pets",
-    categories: [
-      { key: "dog", label: "Dog" },
-      { key: "cat", label: "Cat" },
-    ],
-  },
-  {
-    key: "vehicle",
-    label: "Vehicle",
-    categories: [
-      { key: "car_interior", label: "Car Interior" },
-      { key: "car_exterior", label: "Car Exterior" },
-    ],
-  },
-  {
-    key: "garden",
-    label: "Garden",
-    categories: [
-      { key: "patio", label: "Patio" },
-      { key: "garden", label: "Garden" },
-      { key: "balcony", label: "Balcony" },
-    ],
-  },
+const CATEGORIES = [
+  { key: "full_body", label: "Full Body" },
+  { key: "upper_body", label: "Upper Body" },
+  { key: "face", label: "Face" },
+  { key: "hands", label: "Hands" },
+  { key: "fingers", label: "Fingers" },
+  { key: "nails", label: "Nails" },
+  { key: "hair", label: "Hair" },
+  { key: "ears", label: "Ears" },
 ];
 
 export function Popup() {
@@ -99,14 +57,19 @@ export function Popup() {
   const [photos, setPhotos] = useState<PhotoRecord[]>([]);
   const [photosLoading, setPhotosLoading] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState("you");
+
+  // Settings state
+  const [displayMode, setDisplayMode] = useState<"popup" | "sidepanel">("popup");
 
   // Initialize auth
   useEffect(() => {
-    chrome.storage.local.get(["cartify_auth_token", "cartify_user"], (result) => {
+    chrome.storage.local.get(["cartify_auth_token", "cartify_user", "cartify_display_mode"], (result) => {
       if (result.cartify_auth_token && result.cartify_user) {
         setStoredUser(result.cartify_user);
         setUser({ id: result.cartify_user.id });
+      }
+      if (result.cartify_display_mode) {
+        setDisplayMode(result.cartify_display_mode);
       }
       setLoading(false);
     });
@@ -230,6 +193,7 @@ export function Popup() {
     setStoredUser(null);
     setResults([]);
     setPhotos([]);
+    setScreen("profile");
   };
 
   const handleUpload = async (category: string, file: File) => {
@@ -289,6 +253,11 @@ export function Popup() {
       method: "DELETE", headers,
     });
     setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
+  };
+
+  const handleDisplayModeChange = (mode: "popup" | "sidepanel") => {
+    setDisplayMode(mode);
+    chrome.storage.local.set({ cartify_display_mode: mode });
   };
 
   // ── LOADING ──
@@ -351,8 +320,6 @@ export function Popup() {
   const getAffiliateUrl = (r: TryonResult) =>
     `${SUPABASE_URL}/functions/v1/redirect?target=${encodeURIComponent(r.page_url)}&retailerDomain=${r.retailer_domain ?? ""}`;
 
-  const activeGroup = CATEGORY_GROUPS.find((g) => g.key === activeTab) || CATEGORY_GROUPS[0];
-
   return (
     <div className="w-[380px] h-[560px] flex flex-col overflow-hidden">
       {/* ── Fixed header ── */}
@@ -372,38 +339,28 @@ export function Popup() {
             </div>
           </div>
           <button
-            onClick={handleSignOut}
-            className="text-muted-foreground text-[11px] font-medium px-2.5 py-1 rounded-lg hover:bg-secondary hover:text-foreground transition-colors"
+            onClick={() => setScreen("settings")}
+            className="text-muted-foreground text-[16px] px-2 py-1 rounded-lg hover:bg-secondary hover:text-foreground transition-colors"
+            title="Settings"
           >
-            Sign Out
+            ⚙
           </button>
         </div>
       </div>
 
-      {/* ── Fixed tabs (profile) or showroom header ── */}
+      {/* ── Fixed sub-header ── */}
       {screen === "profile" ? (
         <div className="shrink-0 px-5 pb-2">
-          <p className="text-[11px] text-muted-foreground mb-2">Your photos for virtual try-on</p>
-          <div className="flex gap-1 flex-wrap">
-            {CATEGORY_GROUPS.map((group) => (
-              <button
-                key={group.key}
-                onClick={() => setActiveTab(group.key)}
-                className={`px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
-                  activeTab === group.key
-                    ? "bg-foreground text-background"
-                    : "bg-secondary text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {group.label}
-              </button>
-            ))}
-          </div>
+          <p className="text-[11px] text-muted-foreground">Your photos for virtual try-on</p>
         </div>
-      ) : (
+      ) : screen === "showroom" ? (
         <div className="shrink-0 px-5 pb-2 pt-1 text-center">
           <h2 className="text-[20px] font-semibold tracking-tight text-foreground">Showroom</h2>
           <p className="mt-1 text-[12px] text-muted-foreground">See how products look on you</p>
+        </div>
+      ) : (
+        <div className="shrink-0 px-5 pb-2 pt-1">
+          <h2 className="text-[16px] font-semibold tracking-tight text-foreground">Settings</h2>
         </div>
       )}
 
@@ -411,7 +368,7 @@ export function Popup() {
       <div className="flex-1 overflow-y-auto px-5 pb-3 scrollbar-hide">
         {screen === "profile" ? (
           <div className="grid grid-cols-2 gap-3 pt-1">
-            {activeGroup.categories.map((cat) => {
+            {CATEGORIES.map((cat) => {
               const photo = photos.find((p) => p.category === cat.key);
               return (
                 <div key={cat.key} className="group relative">
@@ -471,7 +428,7 @@ export function Popup() {
               );
             })}
           </div>
-        ) : (
+        ) : screen === "showroom" ? (
           /* ── SHOWROOM CONTENT ── */
           <div className="py-3">
             {resultsLoading ? (
@@ -558,6 +515,50 @@ export function Popup() {
                 )}
               </div>
             )}
+          </div>
+        ) : (
+          /* ── SETTINGS CONTENT ── */
+          <div className="py-3 space-y-6">
+            <div>
+              <p className="text-[12px] font-medium text-foreground mb-3">Display mode</p>
+              <div className="space-y-2">
+                <label className={`flex items-center gap-3 rounded-xl border px-4 py-3 cursor-pointer transition-colors ${displayMode === "popup" ? "border-foreground bg-secondary" : "border-border hover:bg-secondary/50"}`}>
+                  <input
+                    type="radio"
+                    name="displayMode"
+                    checked={displayMode === "popup"}
+                    onChange={() => handleDisplayModeChange("popup")}
+                    className="accent-foreground"
+                  />
+                  <div>
+                    <p className="text-[13px] font-medium text-foreground">Popup</p>
+                    <p className="text-[11px] text-muted-foreground">Opens as a small popup window</p>
+                  </div>
+                </label>
+                <label className={`flex items-center gap-3 rounded-xl border px-4 py-3 cursor-pointer transition-colors ${displayMode === "sidepanel" ? "border-foreground bg-secondary" : "border-border hover:bg-secondary/50"}`}>
+                  <input
+                    type="radio"
+                    name="displayMode"
+                    checked={displayMode === "sidepanel"}
+                    onChange={() => handleDisplayModeChange("sidepanel")}
+                    className="accent-foreground"
+                  />
+                  <div>
+                    <p className="text-[13px] font-medium text-foreground">Side Panel</p>
+                    <p className="text-[11px] text-muted-foreground">Opens as a browser side panel</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div className="border-t pt-4">
+              <button
+                onClick={handleSignOut}
+                className="w-full rounded-xl border border-border bg-background py-3 text-[13px] font-medium text-foreground transition-opacity hover:opacity-80"
+              >
+                Sign Out
+              </button>
+            </div>
           </div>
         )}
       </div>

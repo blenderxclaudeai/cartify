@@ -27,18 +27,13 @@ import imgSneakers from "@/assets/products/sneakers.png";
 import imgSunglasses from "@/assets/products/sunglasses.png";
 import imgDress from "@/assets/products/dress.png";
 import imgWatch from "@/assets/products/watch.png";
-import imgLamp from "@/assets/products/lamp.png";
 import imgHandbag from "@/assets/products/handbag.png";
 import imgRing from "@/assets/products/ring.png";
-import imgPlanter from "@/assets/products/planter.png";
 import imgBlazer from "@/assets/products/blazer.png";
-import imgChair from "@/assets/products/chair.png";
 import imgHeels from "@/assets/products/heels.png";
 import imgJeans from "@/assets/products/jeans.png";
-import imgVase from "@/assets/products/vase.png";
 import imgHat from "@/assets/products/hat.png";
 import imgBracelet from "@/assets/products/bracelet.png";
-import imgCushion from "@/assets/products/cushion.png";
 import imgBoots from "@/assets/products/boots.png";
 
 /* ------------------------------------------------------------------ */
@@ -74,21 +69,16 @@ const tryOnCategories = [
   { label: "Handbags", img: imgHandbag },
   { label: "Rings", img: imgRing },
   { label: "Jackets", img: imgJacket },
-  { label: "Lamps", img: imgLamp },
-  { label: "Hats", img: imgHat },
-  { label: "Boots", img: imgBoots },
 ];
 
 const tryOnCategories2 = [
+  { label: "Hats", img: imgHat },
+  { label: "Boots", img: imgBoots },
   { label: "Necklaces", img: imgNecklace },
   { label: "Blazers", img: imgBlazer },
-  { label: "Planters", img: imgPlanter },
-  { label: "Bracelet", img: imgBracelet },
+  { label: "Bracelets", img: imgBracelet },
   { label: "Jeans", img: imgJeans },
-  { label: "Vases", img: imgVase },
-  { label: "Chairs", img: imgChair },
   { label: "Heels", img: imgHeels },
-  { label: "Cushions", img: imgCushion },
 ];
 
 const reviews = [
@@ -149,7 +139,7 @@ const faqs = [
   },
   {
     q: "What kind of products can I try on?",
-    a: "Clothing, accessories, jewellery, glasses, shoes — almost anything wearable. We are also expanding to home decor and furniture.",
+    a: "Clothing, accessories, jewellery, glasses, shoes — almost anything wearable.",
   },
   {
     q: "How do I install the extension?",
@@ -285,7 +275,7 @@ export default function LandingPage() {
             Try on anything
           </h2>
           <p className="mx-auto mt-3 max-w-md text-center text-sm text-muted-foreground">
-            Clothes, jewellery, home decor, garden — if a store sells it, you can see it on you.
+            Clothes, jewellery, accessories, shoes — if a store sells it, you can try it on.
           </p>
         </div>
 
