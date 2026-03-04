@@ -1,74 +1,61 @@
 
 
-## Rebrand to Cartify + Fix Extension + Auth Redirect Page
+## Fix List: Login, Product Focus, Extension Polish
 
-### 1. Rename VTO → Cartify everywhere
+### 1. Fix login flow — the /login 404 issue
 
-**Files to change:**
-- `src/pages/LandingPage.tsx` — All "VTO" text in nav, hero, descriptions, footer → "Cartify"
-- `src/components/ImpactCalculator.tsx` — Any "VTO" references in labels
-- `extension/src/popup/Popup.tsx` — Login screen title "VTO" → "Cartify", tagline
-- `extension/src/content/ui.ts` — Login pill text "Log in to VTO" → "Log in to Cartify", modal title "VTO Preview" → "Cartify Preview"
-- `extension/src/content/webAppSync.ts` — Banner text
-- `extension/manifest.json` — Extension name "VTO — Virtual Try-On" → "Cartify — Virtual Try-On"
-- `extension/src/content/index.ts` — Console log prefixes `[VTO]`
-- `extension/src/background/index.ts` — Console log prefixes `[VTO]`
-- FAQ answers referencing "VTO"
+The screenshot shows `/login` returning a 404. The OAuth redirect URL in `extension/src/lib/auth.ts` uses `chrome.identity.getRedirectURL()` which should work for the extension flow. However, the `webAppSync.ts` content script still sends `VTO_SESSION_FROM_WEB` — this suggests the OAuth flow is opening a browser tab to the website instead of using `chrome.identity`. 
 
-### 2. Fix the OAuth redirect / 404 page
+**Root cause:** The `chrome.identity.launchWebAuthFlow` redirect URL (`chrome.identity.getRedirectURL()`) must be registered in the backend's OAuth redirect allowlist. If it's not, the provider may fall back to a web redirect. Also, the `redirect_to` parameter in the auth URL needs to match the extension's redirect URL pattern exactly.
 
-The user sees a 404 with a black banner when logging in. Two issues:
-- `ProtectedRoute.tsx` still redirects to `/login` (deleted route) → change to redirect to `/`
-- The `webAppSync.ts` shows an ugly black banner on whatever page loads after OAuth. Instead, create a proper `/auth/callback` route in `App.tsx` that renders a clean loading page with the Cartify branding and message: "You're being signed in. This page will close automatically."
+**Fix:** Ensure the auth URL includes the correct `redirect_to` for chrome.identity. The current code looks correct — the issue is likely on the backend OAuth config side. We need to verify the redirect URL is whitelisted. But from the code side, the flow should work. The `/login` 404 happens because the old OAuth config redirects to `/login`. We should add `/login` as a catch-all redirect to `/` in `App.tsx` so users never see a 404 there.
 
-**Files:**
-- `src/components/ProtectedRoute.tsx` — Change `/login` redirects to `/`
-- `src/App.tsx` — Add `/auth/callback` route pointing to a new `AuthCallback` page
-- Create `src/pages/AuthCallback.tsx` — Clean, minimal page with Cartify logo, spinner, "You're being signed in. This page will close automatically." text. Matches the website's monochrome design.
-- `extension/src/content/webAppSync.ts` — Remove the ugly black banner. Instead, let the AuthCallback page handle the UI.
+**Files:** `src/App.tsx` — add a redirect from `/login` to `/`
 
-### 3. Fix product image backgrounds
+### 2. Remove non-person categories from extension
 
-Some product PNGs have gray/transparent backgrounds. The cards already use `bg-background` (white) but the images themselves may have gray pixels. Add `mix-blend-mode: multiply` or simply ensure the container has an explicit white background and the image is rendered on top. If specific images still look gray, the issue is in the PNG files themselves — use `bg-white` on the image wrapper and consider adding a white backdrop filter.
+Remove Home, Pets, Vehicle, Garden from `CATEGORY_GROUPS` in `Popup.tsx`. Keep only "You". Remove the tab bar entirely since there's only one group.
 
-**File:** `src/pages/LandingPage.tsx` — Add `bg-white` class directly to the image container divs in the marquee section.
+**File:** `extension/src/popup/Popup.tsx`
 
-### 4. Fix extension popup — sticky layout, no scrollbar
+### 3. Update "Try on anything" section — remove home/garden products
 
-The current layout already has `shrink-0` on header/tabs/bottom-nav and `flex-1 overflow-y-auto` on content. The issue is the `popup.css` hides scrollbars globally on the extension BUT the overall popup may still scroll if content overflows. Fix:
+Remove: Lamps, Chairs, Vases, Planters, Cushions from both `tryOnCategories` and `tryOnCategories2`. Keep only wearable/person items. The remaining person-focused items with white backgrounds: Dress, Sneakers, Watch, Sunglasses, Handbag, Ring, Jacket, Hat, Boots, Necklace, Blazer, Bracelet, Jeans, Heels.
 
-- `extension/src/popup/Popup.tsx`:
-  - The showroom screen content (title "Showroom" + subtitle) should be part of the sticky header area, not inside the scrollable div
-  - Ensure the outer container has `overflow-hidden` (it does: `h-[560px] flex flex-col overflow-hidden`)
-  - Move showroom header text outside the scrollable area into a `shrink-0` section
-  
-- `extension/src/popup/popup.css` — Already has scrollbar hiding. Verify it's applied to the scrollable content div.
+Update the section subtitle to remove "home decor, garden" language.
 
-### 5. Storage key renaming (optional but clean)
+Update the FAQ answer about "What kind of products can I try on?" to remove home decor mention.
 
-All chrome.storage keys use `vto_` prefix. Rename to `cartify_` for consistency:
-- `extension/src/lib/auth.ts`
-- `extension/src/popup/Popup.tsx`
-- `extension/src/background/index.ts`
-- `extension/src/content/webAppSync.ts`
-- `extension/src/content/index.ts`
+**File:** `src/pages/LandingPage.tsx`
+
+### 4. Fix content script login pill text
+
+Change "Log in to Cartify to try on" → "Log in" (shorter, cleaner).
+
+**File:** `extension/src/content/ui.ts`
+
+### 5. Add Settings screen to extension
+
+Add a third screen "settings" accessible from the header (gear icon next to Sign Out). Settings page includes:
+- **Display mode**: Radio/toggle between "Popup" and "Side Panel" — stores preference in `chrome.storage.local` as `cartify_display_mode`
+- Sign Out button moved here
+
+**File:** `extension/src/popup/Popup.tsx`
+
+### 6. Remaining VTO references
+
+`webAppSync.ts` still uses `VTO_SESSION_FROM_WEB` message type and `background/index.ts` listens for it. Rename to `CARTIFY_SESSION_FROM_WEB` for consistency.
+
+**Files:** `extension/src/content/webAppSync.ts`, `extension/src/background/index.ts`
 
 ### Files summary
 
-| File | Action |
-|------|--------|
-| `src/pages/LandingPage.tsx` | Rebrand VTO→Cartify, ensure `bg-white` on product cards |
-| `src/components/ImpactCalculator.tsx` | Check for VTO references |
-| `src/App.tsx` | Add `/auth/callback` route |
-| `src/pages/AuthCallback.tsx` | **Create** — clean auth loading page |
-| `src/pages/NotFound.tsx` | Update to use Cartify branding |
-| `src/components/ProtectedRoute.tsx` | Change `/login` → `/` |
-| `extension/src/popup/Popup.tsx` | Rebrand, fix showroom header sticky, rename storage keys |
-| `extension/src/popup/popup.css` | Ensure scrollbar fully hidden |
-| `extension/src/content/ui.ts` | Rebrand VTO→Cartify |
-| `extension/src/content/webAppSync.ts` | Rebrand, remove black banner, point to `/auth/callback` |
-| `extension/src/content/index.ts` | Rebrand log prefixes, rename storage keys |
-| `extension/src/background/index.ts` | Rebrand, rename storage keys |
-| `extension/src/lib/auth.ts` | Rename storage keys |
-| `extension/manifest.json` | Rebrand name |
+| File | Changes |
+|------|---------|
+| `src/App.tsx` | Add `/login` redirect to `/` |
+| `src/pages/LandingPage.tsx` | Remove lamp/chair/vase/planter/cushion, update subtitle & FAQ |
+| `extension/src/popup/Popup.tsx` | Remove non-You categories, remove tab bar, add Settings screen with display mode toggle |
+| `extension/src/content/ui.ts` | Shorten login pill text to "Log in" |
+| `extension/src/content/webAppSync.ts` | Rename VTO_ message types to CARTIFY_ |
+| `extension/src/background/index.ts` | Rename VTO_ message types to CARTIFY_ |
 
