@@ -1,12 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Cartify — Virtual Try-On",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Try products on yourself before you buy.",
-  "permissions": ["storage", "activeTab", "identity", "tabs"],
+  "permissions": ["storage", "activeTab", "identity", "tabs", "sidePanel"],
   "host_permissions": ["<all_urls>"],
   "action": {
     "default_popup": "popup.html"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
   },
   "background": {
     "service_worker": "background.js"

@@ -10,7 +10,31 @@ export interface TryOnResponse {
   tryOnId?: string;
   resultImageUrl?: string;
   error?: string;
-  missingPhoto?: string; // e.g. "fingers" — tells user which photo to upload
+  missingPhoto?: string;
+}
+
+// ── Message types ──
+
+export interface AuthLoginMessage {
+  type: "AUTH_LOGIN";
+  provider: "google" | "apple";
+}
+
+export interface AuthLogoutMessage {
+  type: "AUTH_LOGOUT";
+}
+
+export interface AuthGetUserMessage {
+  type: "AUTH_GET_USER";
+}
+
+export interface AuthRefreshMessage {
+  type: "AUTH_REFRESH";
+}
+
+export interface ProductDetectedMessage {
+  type: "PRODUCT_DETECTED";
+  payload: ProductData;
 }
 
 export interface TryOnMessage {
@@ -18,6 +42,10 @@ export interface TryOnMessage {
   payload: ProductData;
 }
 
-export interface AuthMessage {
-  type: "CARTIFY_GET_AUTH";
-}
+export type ExtensionMessage =
+  | AuthLoginMessage
+  | AuthLogoutMessage
+  | AuthGetUserMessage
+  | AuthRefreshMessage
+  | ProductDetectedMessage
+  | TryOnMessage;
