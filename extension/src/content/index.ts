@@ -54,13 +54,29 @@ function removeCartifyElements() {
   removeLoginPill();
 }
 
+/** Store detected product data for side panel / popup */
+function storeDetectedProduct() {
+  const product = extractProduct();
+  if (product.product_image) {
+    chrome.runtime.sendMessage(
+      { type: "PRODUCT_DETECTED", payload: product },
+      () => { /* stored */ }
+    );
+  }
+}
+
 function evaluatePage() {
   if (!isProductPage()) {
     removeCartifyElements();
+    // Clear pending product
+    chrome.storage.local.remove("cartify_pending_product");
     return;
   }
 
-  chrome.runtime.sendMessage({ type: "CARTIFY_GET_AUTH" }, (response) => {
+  // Store detected product for side panel
+  storeDetectedProduct();
+
+  chrome.runtime.sendMessage({ type: "AUTH_GET_USER" }, (response) => {
     if (chrome.runtime.lastError) {
       console.log("[Cartify] Extension context error:", chrome.runtime.lastError.message);
       return;

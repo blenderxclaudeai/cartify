@@ -26,7 +26,7 @@ export default defineConfig(() => {
               lib: {
                 entry: path.resolve(extensionRoot, "src/content/index.ts"),
                 formats: ["iife"],
-                name: "VTOContent",
+                name: "CartifyContent",
                 fileName: () => "content.js",
               },
               rollupOptions: {
@@ -49,7 +49,7 @@ export default defineConfig(() => {
               lib: {
                 entry: path.resolve(extensionRoot, "src/content/webAppSync.ts"),
                 formats: ["iife"],
-                name: "VTOWebAppSync",
+                name: "CartifyWebAppSync",
                 fileName: () => "webAppSync.js",
               },
               rollupOptions: {
@@ -72,7 +72,7 @@ export default defineConfig(() => {
               lib: {
                 entry: path.resolve(extensionRoot, "src/background/index.ts"),
                 formats: ["iife"],
-                name: "VTOBackground",
+                name: "CartifyBackground",
                 fileName: () => "background.js",
               },
               rollupOptions: {
@@ -84,13 +84,45 @@ export default defineConfig(() => {
             },
           });
 
+          // Build side panel (HTML entry)
+          await build({
+            configFile: false,
+            plugins: [react()],
+            envDir: path.resolve(extensionRoot, ".."),
+            root: path.resolve(extensionRoot, "src/sidepanel"),
+            base: "./",
+            build: {
+              outDir: distDir,
+              emptyOutDir: false,
+              target: "chrome110",
+              rollupOptions: {
+                input: path.resolve(extensionRoot, "src/sidepanel/index.html"),
+                output: {
+                  entryFileNames: "assets/sidepanel-[hash].js",
+                  chunkFileNames: "assets/[name]-[hash].js",
+                  assetFileNames: "assets/[name]-[hash][extname]",
+                },
+              },
+            },
+            resolve: {
+              alias: { "@ext": path.resolve(extensionRoot, "src") },
+            },
+          });
+
+          // Rename sidepanel index.html
+          const sidepanelIndex = path.resolve(distDir, "index.html");
+          const sidepanelHtml = path.resolve(distDir, "sidepanel.html");
+          if (fs.existsSync(sidepanelIndex)) {
+            fs.renameSync(sidepanelIndex, sidepanelHtml);
+          }
+
           // Copy manifest.json into dist
           fs.copyFileSync(
             path.resolve(extensionRoot, "manifest.json"),
             path.resolve(distDir, "manifest.json")
           );
 
-          // Rename index.html → popup.html to match manifest
+          // Rename popup index.html → popup.html
           const indexHtml = path.resolve(distDir, "index.html");
           const popupHtml = path.resolve(distDir, "popup.html");
           if (fs.existsSync(indexHtml)) {
@@ -100,8 +132,7 @@ export default defineConfig(() => {
       },
     ],
 
-    // Popup is the main entry (React app) — root must be src/popup
-    // so that index.html lands at dist root (not dist/src/popup/)
+    // Popup is the main entry (React app)
     root: path.resolve(extensionRoot, "src/popup"),
     base: "./",
     envDir: path.resolve(extensionRoot, ".."),

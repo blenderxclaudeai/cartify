@@ -56,7 +56,6 @@ function trySendSession() {
     (response) => {
       if (chrome.runtime.lastError) return;
       if (response?.ok) {
-        // Session synced — the AuthCallback page handles the UI
         setTimeout(() => window.close(), 1500);
       }
     }
@@ -66,14 +65,12 @@ function trySendSession() {
 // Run immediately
 trySendSession();
 
-// Watch for storage changes (in case OAuth completes after script loads)
+// Watch for storage changes
 window.addEventListener("storage", (e) => {
-  if (e.key) {
-    trySendSession();
-  }
+  if (e.key) trySendSession();
 });
 
-// Poll briefly in case the session appears via onAuthStateChange
+// Poll briefly
 let attempts = 0;
 const poll = setInterval(() => {
   attempts++;
