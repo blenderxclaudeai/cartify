@@ -6,6 +6,8 @@
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
 
+const TOKEN_REFRESH_ALARM = "cartify_token_refresh";
+
 // ── Auth helpers ──
 
 async function doOAuthLogin(provider: "google" | "apple"): Promise<{ ok: boolean; error?: string }> {
@@ -132,6 +134,28 @@ async function refreshToken(): Promise<boolean> {
   }
 }
 
+// ── Display mode: dynamically toggle popup vs side panel ──
+
+async function applyDisplayMode(mode: "popup" | "sidepanel") {
+  if (mode === "sidepanel") {
+    // Disable popup so action.onClicked fires, and enable side panel on click
+    await chrome.action.setPopup({ popup: "" });
+    try {
+      await (chrome.sidePanel as any).setPanelBehavior({ openPanelOnActionClick: true });
+    } catch (e) {
+      console.log("[Cartify] setPanelBehavior not supported:", e);
+    }
+  } else {
+    // Re-enable popup and disable side panel on click
+    await chrome.action.setPopup({ popup: "popup.html" });
+    try {
+      await (chrome.sidePanel as any).setPanelBehavior({ openPanelOnActionClick: false });
+    } catch (e) {
+      console.log("[Cartify] setPanelBehavior not supported:", e);
+    }
+  }
+}
+
 // ── Message handler ──
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -194,6 +218,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "CARTIFY_TRYON_REQUEST") {
     const { payload } = msg;
     handleTryOn(payload).then(sendResponse);
+    return true;
+  }
+
+  // DISPLAY_MODE_CHANGED — apply popup/sidepanel toggle
+  if (msg.type === "DISPLAY_MODE_CHANGED") {
+    applyDisplayMode(msg.mode).then(() => sendResponse({ ok: true }));
     return true;
   }
 
@@ -261,19 +291,6 @@ async function handleTryOn(payload: any): Promise<any> {
       cartify_recent_tryons: recent,
     });
 
-    // Silent affiliate cookie drop
-    try {
-      const domain = new URL(payload.product_url).hostname;
-      const redirectUrl = `${SUPABASE_URL}/functions/v1/redirect?target=${encodeURIComponent(payload.product_url)}&retailerDomain=${encodeURIComponent(domain)}&clickRef=silent_cookie`;
-      chrome.tabs.create({ url: redirectUrl, active: false }, (tab) => {
-        if (tab?.id) {
-          setTimeout(() => { chrome.tabs.remove(tab.id!); }, 3000);
-        }
-      });
-    } catch (e) {
-      console.log("[Cartify] Silent cookie drop failed:", e);
-    }
-
     return {
       ok: true,
       tryOnId: data.tryOnId,
@@ -285,37 +302,38 @@ async function handleTryOn(payload: any): Promise<any> {
   }
 }
 
-// ── Side panel behavior ──
+// ── Lifecycle ──
 
-// When user clicks extension icon, check display mode preference
-chrome.action.onClicked.addListener(async (tab) => {
-  const stored = await chrome.storage.local.get("cartify_display_mode");
-  if (stored.cartify_display_mode === "sidepanel" && tab.id) {
-    try {
-      await (chrome.sidePanel as any).open({ tabId: tab.id });
-    } catch {
-      // Fallback: popup will open automatically
-    }
+chrome.runtime.onInstalled.addListener(async () => {
+  chrome.storage.local.remove(["cartify_last_result"]);
+
+  // Set default display mode
+  const result = await chrome.storage.local.get("cartify_display_mode");
+  const mode = result.cartify_display_mode || "popup";
+  if (!result.cartify_display_mode) {
+    await chrome.storage.local.set({ cartify_display_mode: "popup" });
+  }
+  await applyDisplayMode(mode);
+
+  // Set up periodic token refresh alarm (every 45 minutes)
+  chrome.alarms.create(TOKEN_REFRESH_ALARM, { periodInMinutes: 45 });
+});
+
+// Listen for display mode changes from storage
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.cartify_display_mode?.newValue) {
+    applyDisplayMode(changes.cartify_display_mode.newValue);
   }
 });
 
-// ── Lifecycle ──
+// ── Alarm-based token refresh (MV3 safe) ──
 
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.local.remove(["cartify_last_result"]);
-  // Set default display mode
-  chrome.storage.local.get("cartify_display_mode", (result) => {
-    if (!result.cartify_display_mode) {
-      chrome.storage.local.set({ cartify_display_mode: "popup" });
-    }
-  });
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === TOKEN_REFRESH_ALARM) {
+    chrome.storage.local.get("cartify_auth_token", (result) => {
+      if (result.cartify_auth_token) {
+        refreshToken();
+      }
+    });
+  }
 });
-
-// Periodic token refresh (every 45 minutes)
-setInterval(() => {
-  chrome.storage.local.get("cartify_auth_token", (result) => {
-    if (result.cartify_auth_token) {
-      refreshToken();
-    }
-  });
-}, 45 * 60 * 1000);

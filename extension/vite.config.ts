@@ -15,6 +15,17 @@ export default defineConfig(() => {
         async closeBundle() {
           const { build } = await import("vite");
 
+          /**
+           * IMPORTANT: The primary Vite build (popup) outputs dist/index.html.
+           * Rename it to popup.html IMMEDIATELY, before any subsequent build
+           * overwrites dist/index.html.
+           */
+          const popupIndex = path.resolve(distDir, "index.html");
+          const popupHtml = path.resolve(distDir, "popup.html");
+          if (fs.existsSync(popupIndex)) {
+            fs.renameSync(popupIndex, popupHtml);
+          }
+
           // Build content script (IIFE)
           await build({
             configFile: false,
@@ -109,7 +120,7 @@ export default defineConfig(() => {
             },
           });
 
-          // Rename sidepanel index.html
+          // Rename sidepanel index.html -> sidepanel.html
           const sidepanelIndex = path.resolve(distDir, "index.html");
           const sidepanelHtml = path.resolve(distDir, "sidepanel.html");
           if (fs.existsSync(sidepanelIndex)) {
@@ -122,11 +133,19 @@ export default defineConfig(() => {
             path.resolve(distDir, "manifest.json")
           );
 
-          // Rename popup index.html → popup.html
-          const indexHtml = path.resolve(distDir, "index.html");
-          const popupHtml = path.resolve(distDir, "popup.html");
-          if (fs.existsSync(indexHtml)) {
-            fs.renameSync(indexHtml, popupHtml);
+          // Fail fast if critical files are missing
+          for (const required of [
+            "manifest.json",
+            "popup.html",
+            "sidepanel.html",
+            "background.js",
+            "content.js",
+          ]) {
+            if (!fs.existsSync(path.resolve(distDir, required))) {
+              throw new Error(
+                `[extension build] Missing required dist file: ${required}`
+              );
+            }
           }
         },
       },

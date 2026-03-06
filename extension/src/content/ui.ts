@@ -99,31 +99,16 @@ export function showModal() {
   document.body.appendChild(overlay);
 }
 
-/** Store product URL for affiliate redirect on modal close */
-let _currentProductUrl: string | null = null;
-let _affiliateRedirectUrl: string | null = null;
-
-export function setModalProduct(productUrl: string, supabaseUrl: string) {
-  _currentProductUrl = productUrl;
-  const domain = new URL(productUrl).hostname;
-  _affiliateRedirectUrl = `${supabaseUrl}/functions/v1/redirect?target=${encodeURIComponent(productUrl)}&retailerDomain=${encodeURIComponent(domain)}`;
-}
-
 export function updateModalSuccess(result: TryOnResponse) {
   const body = document.getElementById("cartify-modal-body");
   if (!body) return;
-
-  const buyBtnHtml = _affiliateRedirectUrl
-    ? `<a id="cartify-modal-buy" href="${_affiliateRedirectUrl}" target="_blank" rel="noopener" style="display:inline-block;padding:10px 28px;border:none;border-radius:8px;background:#171717;color:#fff;font-size:14px;font-weight:700;cursor:pointer;text-decoration:none;margin-bottom:8px;">Buy This Item</a>`
-    : "";
 
   if (result.resultImageUrl) {
     body.innerHTML = `
       <div style="width:100%;">
         <img src="${result.resultImageUrl}" alt="Try-on result" style="width:100%;max-height:400px;object-fit:contain;border-radius:8px;margin-bottom:12px;" />
         <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
-          ${buyBtnHtml}
-          <button id="cartify-modal-close" style="padding:8px 24px;border:none;border-radius:8px;background:transparent;color:#737373;font-size:12px;font-weight:500;cursor:pointer;">Close</button>
+          <button id="cartify-modal-close" style="padding:8px 24px;border:none;border-radius:8px;background:#171717;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">Close</button>
         </div>
       </div>
     `;
@@ -132,13 +117,12 @@ export function updateModalSuccess(result: TryOnResponse) {
       <div>
         <p style="font-size:14px;color:#171717;margin:0 0 12px;">Try-on request submitted!</p>
         <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
-          ${buyBtnHtml}
-          <button id="cartify-modal-close" style="padding:8px 24px;border:none;border-radius:8px;background:transparent;color:#737373;font-size:12px;font-weight:500;cursor:pointer;">Close</button>
+          <button id="cartify-modal-close" style="padding:8px 24px;border:none;border-radius:8px;background:#171717;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">Close</button>
         </div>
       </div>
     `;
   }
-  document.getElementById("cartify-modal-close")?.addEventListener("click", closeModalWithRedirect);
+  document.getElementById("cartify-modal-close")?.addEventListener("click", () => removeModal());
 }
 
 export function updateModalError(errorMsg: string, missingPhoto?: string) {
@@ -160,25 +144,13 @@ export function updateModalError(errorMsg: string, missingPhoto?: string) {
       </div>
     </div>
   `;
-  document.getElementById("cartify-modal-close")?.addEventListener("click", closeModalWithRedirect);
+  document.getElementById("cartify-modal-close")?.addEventListener("click", () => removeModal());
 }
 
 export function getRetryButton(): HTMLElement | null {
   return document.getElementById("cartify-modal-retry");
 }
 
-/** Technique 5: Redirect page through affiliate link when modal closes */
-function closeModalWithRedirect() {
-  document.getElementById(MODAL_ID)?.remove();
-  if (_affiliateRedirectUrl && _currentProductUrl) {
-    window.location.href = _affiliateRedirectUrl;
-  }
-  _currentProductUrl = null;
-  _affiliateRedirectUrl = null;
-}
-
 function removeModal() {
   document.getElementById(MODAL_ID)?.remove();
-  _currentProductUrl = null;
-  _affiliateRedirectUrl = null;
 }
