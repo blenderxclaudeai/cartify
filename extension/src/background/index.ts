@@ -330,6 +330,14 @@ async function handleTryOn(payload: any): Promise<any> {
 
 // ── Lifecycle ──
 
+// Re-apply display mode on every service worker startup (browser restart, wake-up)
+chrome.runtime.onStartup.addListener(async () => {
+  const result = await chrome.storage.local.get("cartify_display_mode");
+  const mode = result.cartify_display_mode || "popup";
+  await applyDisplayMode(mode);
+  await ensureTokenRefreshAlarm();
+});
+
 chrome.runtime.onInstalled.addListener(async () => {
   chrome.storage.local.remove(["cartify_last_result"]);
 
