@@ -3,6 +3,8 @@ export interface ProductData {
   product_title: string;
   product_image: string;
   product_category?: string;
+  product_price?: string;
+  retailer_domain?: string;
 }
 
 export interface TryOnResponse {
@@ -40,6 +42,17 @@ export interface ProductDetectedMessage {
 export interface TryOnMessage {
   type: "CARTIFY_TRYON_REQUEST";
   payload: ProductData;
+  background?: boolean;
+}
+
+export interface AddToCartMessage {
+  type: "CARTIFY_ADD_TO_CART";
+  payload: ProductData;
+}
+
+export interface SaveProductMessage {
+  type: "CARTIFY_SAVE_PRODUCT";
+  payload: ProductData;
 }
 
 export type ExtensionMessage =
@@ -48,4 +61,6 @@ export type ExtensionMessage =
   | AuthGetUserMessage
   | AuthRefreshMessage
   | ProductDetectedMessage
-  | TryOnMessage;
+  | TryOnMessage
+  | AddToCartMessage
+  | SaveProductMessage;
