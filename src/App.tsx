@@ -34,6 +34,7 @@ const App = () => (
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<Navigate to="/" replace />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
+            <Route path="/auth/extension" element={<ExtensionAuth />} />
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/showroom" element={<ProtectedRoute><Showroom /></ProtectedRoute>} />
             <Route path="/admin" element={<AdminRoute><AdminPage /></AdminRoute>} />
