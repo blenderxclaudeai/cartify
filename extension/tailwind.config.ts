@@ -1,7 +1,11 @@
 import type { Config } from "tailwindcss";
 
 export default {
-  content: ["./src/popup/**/*.{ts,tsx,html}"],
+  content: [
+    "./src/popup/**/*.{ts,tsx,html}",
+    "./src/sidepanel/**/*.{ts,tsx,html}",
+    "./src/shared/**/*.{ts,tsx,html}",
+  ],
   prefix: "",
   theme: {
     extend: {
