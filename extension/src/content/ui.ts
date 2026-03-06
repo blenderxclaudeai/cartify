@@ -341,8 +341,70 @@ export function setCardButtonState(btn: HTMLElement, state: CardButtonState) {
   }
 }
 
+export function injectCartButton(
+  container: HTMLElement,
+  onClick: () => void
+): HTMLElement {
+  const existing = container.querySelector(`[${CART_BTN_ATTR}]`);
+  if (existing) return existing as HTMLElement;
+
+  const pos = getComputedStyle(container).position;
+  if (pos === "static" || pos === "") {
+    container.style.position = "relative";
+  }
+
+  const btn = document.createElement("button");
+  btn.setAttribute(CART_BTN_ATTR, "true");
+  btn.innerHTML = CART_SVG;
+  Object.assign(btn.style, {
+    position: "absolute",
+    top: "44px",
+    right: "8px",
+    zIndex: "999",
+    width: "30px",
+    height: "30px",
+    padding: "0",
+    border: "none",
+    borderRadius: "50%",
+    background: "rgba(23,23,23,0.7)",
+    color: "#fff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+    opacity: "0.6",
+    transition: "opacity 0.15s ease, transform 0.15s ease, background 0.15s ease",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+    fontFamily: "inherit",
+    lineHeight: "1",
+  });
+
+  btn.addEventListener("mouseenter", () => { btn.style.opacity = "1"; btn.style.transform = "scale(1.1)"; });
+  btn.addEventListener("mouseleave", () => { btn.style.opacity = "0.6"; btn.style.transform = "scale(1)"; });
+  btn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onClick();
+  });
+
+  container.appendChild(btn);
+  return btn;
+}
+
+export function setCartButtonDone(btn: HTMLElement) {
+  btn.innerHTML = CHECK_SVG;
+  btn.style.background = "#16a34a";
+  btn.style.opacity = "1";
+  setTimeout(() => {
+    btn.innerHTML = CART_SVG;
+    btn.style.background = "rgba(23,23,23,0.7)";
+    btn.style.opacity = "0.6";
+  }, 2000);
+}
+
 export function removeAllCardButtons(): void {
   document.querySelectorAll(`[${CARD_BTN_ATTR}]`).forEach((el) => el.remove());
+  document.querySelectorAll(`[${CART_BTN_ATTR}]`).forEach((el) => el.remove());
 }
 
 // ── Toast notification ──

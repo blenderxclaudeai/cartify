@@ -173,11 +173,12 @@ export default function Showroom() {
                 <div className="grid grid-cols-2 gap-3">
                   {completedResults.map(r => (
                     <div key={r.id} className="group relative">
-                      <img
-                        src={r.result_image_url!}
-                        alt={r.title || "Try-on result"}
-                        className="aspect-[3/4] w-full rounded-xl object-cover"
-                      />
+                        <img
+                          src={r.result_image_url!}
+                          alt={r.title || "Try-on result"}
+                          className="aspect-[3/4] w-full rounded-xl object-cover"
+                          loading="lazy"
+                        />
                       {(r.title || r.price || r.retailer_domain) && (
                         <div className="mt-1.5 px-0.5">
                           {r.title && <p className="truncate text-[12px] font-medium text-foreground">{r.title}</p>}
