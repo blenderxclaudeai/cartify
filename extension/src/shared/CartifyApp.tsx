@@ -292,7 +292,7 @@ export function CartifyApp({ mode }: CartifyAppProps) {
   // ── Dimensions ──
   const containerClass = mode === "popup"
     ? "w-[380px] h-[560px] flex flex-col overflow-hidden"
-    : "w-full h-full min-h-screen flex flex-col overflow-hidden";
+    : "w-full h-screen flex flex-col overflow-hidden";
 
   // ── LOADING ──
   if (loading) {

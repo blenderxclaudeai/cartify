@@ -316,7 +316,7 @@ async function handleTryOn(payload: any): Promise<any> {
 
 chrome.runtime.onStartup.addListener(async () => {
   const result = await chrome.storage.local.get("cartify_display_mode");
-  const mode = result.cartify_display_mode || "popup";
+  const mode = result.cartify_display_mode || "sidepanel";
   await applyDisplayMode(mode);
   await ensureTokenRefreshAlarm();
 });
@@ -325,9 +325,9 @@ chrome.runtime.onInstalled.addListener(async () => {
   chrome.storage.local.remove(["cartify_last_result"]);
 
   const result = await chrome.storage.local.get("cartify_display_mode");
-  const mode = result.cartify_display_mode || "popup";
+  const mode = result.cartify_display_mode || "sidepanel";
   if (!result.cartify_display_mode) {
-    await chrome.storage.local.set({ cartify_display_mode: "popup" });
+    await chrome.storage.local.set({ cartify_display_mode: "sidepanel" });
   }
   await applyDisplayMode(mode);
   await ensureTokenRefreshAlarm();
