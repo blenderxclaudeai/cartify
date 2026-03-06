@@ -548,14 +548,30 @@ export function CartifyApp({ mode }: CartifyAppProps) {
                             </div>
                           </div>
                         )}
-                        <a
-                          href={getAffiliateUrl(r)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mt-1.5 flex w-full items-center justify-center rounded-lg bg-foreground px-3 py-1.5 text-[11px] font-medium text-background transition-opacity hover:opacity-90 no-underline"
-                        >
-                          Add to Cart
-                        </a>
+                        <div className="mt-1.5 flex gap-1.5">
+                          <a
+                            href={getAffiliateUrl(r)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex-1 flex items-center justify-center rounded-lg bg-foreground px-3 py-1.5 text-[11px] font-medium text-background transition-opacity hover:opacity-90 no-underline"
+                          >
+                            Add to Cart
+                          </a>
+                          <button
+                            onClick={() => handleDownload(r)}
+                            title="Download"
+                            className="flex items-center justify-center rounded-lg border border-border bg-background px-2 py-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                          </button>
+                          <button
+                            onClick={() => handleShare(r)}
+                            title="Share"
+                            className="flex items-center justify-center rounded-lg border border-border bg-background px-2 py-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
