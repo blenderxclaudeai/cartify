@@ -8,6 +8,20 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as strin
 
 const TOKEN_REFRESH_ALARM = "cartify_token_refresh";
 
+// ── Alarm helper (idempotent, safe to call on every startup) ──
+
+async function ensureTokenRefreshAlarm() {
+  const existing = await chrome.alarms.get(TOKEN_REFRESH_ALARM);
+  if (!existing) {
+    await chrome.alarms.create(TOKEN_REFRESH_ALARM, { periodInMinutes: 45 });
+  }
+}
+
+// Ensure alarm exists whenever service worker starts (alarms may be cleared on restart)
+ensureTokenRefreshAlarm().catch((e) =>
+  console.warn("[Cartify] alarm init failed:", e)
+);
+
 // ── Auth helpers ──
 
 async function doOAuthLogin(provider: "google" | "apple"): Promise<{ ok: boolean; error?: string }> {
@@ -97,8 +111,8 @@ async function getAuthState(): Promise<{ loggedIn: boolean; user: any | null }> 
 
 async function refreshToken(): Promise<boolean> {
   const stored = await chrome.storage.local.get("cartify_refresh_token");
-  const refreshToken = stored.cartify_refresh_token;
-  if (!refreshToken) return false;
+  const refreshTok = stored.cartify_refresh_token;
+  if (!refreshTok) return false;
 
   try {
     const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
@@ -107,7 +121,7 @@ async function refreshToken(): Promise<boolean> {
         apikey: SUPABASE_ANON_KEY,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ refresh_token: refreshToken }),
+      body: JSON.stringify({ refresh_token: refreshTok }),
     });
 
     if (!res.ok) return false;
@@ -134,22 +148,37 @@ async function refreshToken(): Promise<boolean> {
   }
 }
 
-// ── Display mode: dynamically toggle popup vs side panel ──
+// ── Display mode: dynamically toggle popup vs side panel (fail-safe) ──
 
 async function applyDisplayMode(mode: "popup" | "sidepanel") {
   if (mode === "sidepanel") {
+    // Check if Side Panel API is available (Chrome 114+)
+    const sidePanelSupported =
+      !!(chrome.sidePanel && typeof (chrome.sidePanel as any).setPanelBehavior === "function");
+
+    if (!sidePanelSupported) {
+      console.log("[Cartify] Side Panel API not supported; reverting to popup.");
+      await chrome.action.setPopup({ popup: "popup.html" });
+      await chrome.storage.local.set({ cartify_display_mode: "popup" });
+      return;
+    }
+
     // Disable popup so action.onClicked fires, and enable side panel on click
     await chrome.action.setPopup({ popup: "" });
     try {
       await (chrome.sidePanel as any).setPanelBehavior({ openPanelOnActionClick: true });
     } catch (e) {
-      console.log("[Cartify] setPanelBehavior not supported:", e);
+      console.log("[Cartify] setPanelBehavior failed; reverting to popup:", e);
+      await chrome.action.setPopup({ popup: "popup.html" });
+      await chrome.storage.local.set({ cartify_display_mode: "popup" });
     }
   } else {
     // Re-enable popup and disable side panel on click
     await chrome.action.setPopup({ popup: "popup.html" });
     try {
-      await (chrome.sidePanel as any).setPanelBehavior({ openPanelOnActionClick: false });
+      if (chrome.sidePanel && typeof (chrome.sidePanel as any).setPanelBehavior === "function") {
+        await (chrome.sidePanel as any).setPanelBehavior({ openPanelOnActionClick: false });
+      }
     } catch (e) {
       console.log("[Cartify] setPanelBehavior not supported:", e);
     }
@@ -161,26 +190,22 @@ async function applyDisplayMode(mode: "popup" | "sidepanel") {
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg?.type) return;
 
-  // AUTH_LOGIN — trigger OAuth flow
   if (msg.type === "AUTH_LOGIN") {
     const provider = msg.provider || "google";
     doOAuthLogin(provider).then(sendResponse);
     return true;
   }
 
-  // AUTH_LOGOUT
   if (msg.type === "AUTH_LOGOUT") {
     doLogout().then(() => sendResponse({ ok: true }));
     return true;
   }
 
-  // AUTH_GET_USER
   if (msg.type === "AUTH_GET_USER") {
     getAuthState().then(sendResponse);
     return true;
   }
 
-  // AUTH_REFRESH
   if (msg.type === "AUTH_REFRESH") {
     refreshToken().then((ok) => sendResponse({ ok }));
     return true;
@@ -272,15 +297,16 @@ async function handleTryOn(payload: any): Promise<any> {
       };
     }
 
-    // Store result locally (local-first)
+    // Store only metadata locally (URLs, not base64 blobs) to avoid exceeding 10 MB quota
     const result = {
-      ...data,
+      tryOnId: data.tryOnId,
+      resultImageUrl: data.resultImageUrl,
       product_url: payload.product_url,
       product_title: payload.product_title,
       timestamp: Date.now(),
     };
 
-    // Add to recent_tryons list
+    // Add to recent_tryons list (capped at 20 entries of metadata only)
     const existing = await chrome.storage.local.get("cartify_recent_tryons");
     const recent = existing.cartify_recent_tryons || [];
     recent.unshift(result);
@@ -315,8 +341,8 @@ chrome.runtime.onInstalled.addListener(async () => {
   }
   await applyDisplayMode(mode);
 
-  // Set up periodic token refresh alarm (every 45 minutes)
-  chrome.alarms.create(TOKEN_REFRESH_ALARM, { periodInMinutes: 45 });
+  // Ensure alarm exists (also called at top-level, but belt-and-suspenders)
+  await ensureTokenRefreshAlarm();
 });
 
 // Listen for display mode changes from storage

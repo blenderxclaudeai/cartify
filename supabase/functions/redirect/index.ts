@@ -6,6 +6,24 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Domain allowlist for redirect targets (prevents open redirect attacks)
+const ALLOWED_REDIRECT_DOMAINS: string[] = [
+  // Add merchant domains here, e.g.:
+  // "amazon.com", "www.amazon.com",
+  // "zara.com", "www.zara.com",
+];
+
+function isDomainAllowed(hostname: string): boolean {
+  // If allowlist is empty, allow all (development mode) — populate for production
+  if (ALLOWED_REDIRECT_DOMAINS.length === 0) return true;
+
+  const normalized = hostname.toLowerCase().replace(/^www\./, "");
+  return ALLOWED_REDIRECT_DOMAINS.some((d) => {
+    const normalizedAllowed = d.toLowerCase().replace(/^www\./, "");
+    return normalized === normalizedAllowed || normalized.endsWith(`.${normalizedAllowed}`);
+  });
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -28,6 +46,11 @@ serve(async (req) => {
       }
     } catch {
       return new Response(JSON.stringify({ error: "Invalid URL" }), { status: 400, headers: corsHeaders });
+    }
+
+    // Check domain allowlist to prevent open redirect attacks
+    if (!isDomainAllowed(parsedUrl.hostname)) {
+      return new Response(JSON.stringify({ error: "Redirect domain not allowed" }), { status: 403, headers: corsHeaders });
     }
 
     const supabase = createClient(

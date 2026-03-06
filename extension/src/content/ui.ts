@@ -83,13 +83,35 @@ export function showModal() {
     width: "380px", maxHeight: "80vh", overflow: "auto",
     boxShadow: "0 20px 60px rgba(0,0,0,0.3)", textAlign: "center", color: "#171717",
   });
-  card.innerHTML = `
-    <h2 style="margin:0 0 4px;font-size:18px;font-weight:700;">Cartify Preview</h2>
-    <p style="margin:0 0 16px;font-size:13px;color:#737373;">Generating your try-on...</p>
-    <div id="cartify-modal-body" style="min-height:200px;display:flex;align-items:center;justify-content:center;">
-      <div style="width:32px;height:32px;border:3px solid #e5e5e5;border-top-color:#171717;border-radius:50%;animation:cartify-spin 0.8s linear infinite;"></div>
-    </div>
-  `;
+
+  // Title
+  const title = document.createElement("h2");
+  Object.assign(title.style, { margin: "0 0 4px", fontSize: "18px", fontWeight: "700" });
+  title.textContent = "Cartify Preview";
+  card.appendChild(title);
+
+  // Subtitle
+  const subtitle = document.createElement("p");
+  Object.assign(subtitle.style, { margin: "0 0 16px", fontSize: "13px", color: "#737373" });
+  subtitle.textContent = "Generating your try-on...";
+  card.appendChild(subtitle);
+
+  // Body with spinner
+  const body = document.createElement("div");
+  body.id = "cartify-modal-body";
+  Object.assign(body.style, {
+    minHeight: "200px", display: "flex", alignItems: "center", justifyContent: "center",
+  });
+
+  const spinner = document.createElement("div");
+  Object.assign(spinner.style, {
+    width: "32px", height: "32px",
+    border: "3px solid #e5e5e5", borderTopColor: "#171717",
+    borderRadius: "50%", animation: "cartify-spin 0.8s linear infinite",
+  });
+  body.appendChild(spinner);
+  card.appendChild(body);
+
   const style = document.createElement("style");
   style.textContent = `@keyframes cartify-spin{to{transform:rotate(360deg)}}`;
   card.appendChild(style);
@@ -103,48 +125,101 @@ export function updateModalSuccess(result: TryOnResponse) {
   const body = document.getElementById("cartify-modal-body");
   if (!body) return;
 
+  // Clear body
+  body.textContent = "";
+
+  const wrapper = document.createElement("div");
+  wrapper.style.width = "100%";
+
   if (result.resultImageUrl) {
-    body.innerHTML = `
-      <div style="width:100%;">
-        <img src="${result.resultImageUrl}" alt="Try-on result" style="width:100%;max-height:400px;object-fit:contain;border-radius:8px;margin-bottom:12px;" />
-        <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
-          <button id="cartify-modal-close" style="padding:8px 24px;border:none;border-radius:8px;background:#171717;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">Close</button>
-        </div>
-      </div>
-    `;
+    const img = document.createElement("img");
+    img.src = result.resultImageUrl;
+    img.alt = "Try-on result";
+    Object.assign(img.style, {
+      width: "100%", maxHeight: "400px", objectFit: "contain",
+      borderRadius: "8px", marginBottom: "12px",
+    });
+    wrapper.appendChild(img);
   } else {
-    body.innerHTML = `
-      <div>
-        <p style="font-size:14px;color:#171717;margin:0 0 12px;">Try-on request submitted!</p>
-        <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
-          <button id="cartify-modal-close" style="padding:8px 24px;border:none;border-radius:8px;background:#171717;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">Close</button>
-        </div>
-      </div>
-    `;
+    const msg = document.createElement("p");
+    Object.assign(msg.style, { fontSize: "14px", color: "#171717", margin: "0 0 12px" });
+    msg.textContent = "Try-on request submitted!";
+    wrapper.appendChild(msg);
   }
-  document.getElementById("cartify-modal-close")?.addEventListener("click", () => removeModal());
+
+  const btnRow = document.createElement("div");
+  Object.assign(btnRow.style, {
+    display: "flex", flexDirection: "column", alignItems: "center", gap: "6px",
+  });
+
+  const closeBtn = document.createElement("button");
+  closeBtn.id = "cartify-modal-close";
+  closeBtn.textContent = "Close";
+  Object.assign(closeBtn.style, {
+    padding: "8px 24px", border: "none", borderRadius: "8px",
+    background: "#171717", color: "#fff", fontSize: "13px",
+    fontWeight: "600", cursor: "pointer",
+  });
+  closeBtn.addEventListener("click", () => removeModal());
+  btnRow.appendChild(closeBtn);
+  wrapper.appendChild(btnRow);
+  body.appendChild(wrapper);
 }
 
 export function updateModalError(errorMsg: string, missingPhoto?: string) {
   const body = document.getElementById("cartify-modal-body");
   if (!body) return;
 
-  const missingPhotoHtml = missingPhoto
-    ? `<p style="font-size:12px;color:#737373;margin:8px 0 0;">Open the Cartify extension and upload a photo of your <strong>${missingPhoto}</strong> in your profile to try on this product.</p>`
-    : "";
+  // Clear body safely
+  body.textContent = "";
 
-  body.innerHTML = `
-    <div>
-      <p style="font-size:14px;color:#dc2626;margin:0 0 8px;">Something went wrong</p>
-      <p style="font-size:12px;color:#737373;margin:0 0 8px;">${errorMsg}</p>
-      ${missingPhotoHtml}
-      <div style="display:flex;gap:8px;justify-content:center;margin-top:16px;">
-        <button id="cartify-modal-retry" style="padding:8px 20px;border:1px solid #e5e5e5;border-radius:8px;background:#fff;color:#171717;font-size:13px;font-weight:500;cursor:pointer;">Retry</button>
-        <button id="cartify-modal-close" style="padding:8px 20px;border:none;border-radius:8px;background:#171717;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">Close</button>
-      </div>
-    </div>
-  `;
-  document.getElementById("cartify-modal-close")?.addEventListener("click", () => removeModal());
+  const wrapper = document.createElement("div");
+
+  const errorTitle = document.createElement("p");
+  Object.assign(errorTitle.style, { fontSize: "14px", color: "#dc2626", margin: "0 0 8px" });
+  errorTitle.textContent = "Something went wrong";
+  wrapper.appendChild(errorTitle);
+
+  const errorDetail = document.createElement("p");
+  Object.assign(errorDetail.style, { fontSize: "12px", color: "#737373", margin: "0 0 8px" });
+  errorDetail.textContent = errorMsg;
+  wrapper.appendChild(errorDetail);
+
+  if (missingPhoto) {
+    const hint = document.createElement("p");
+    Object.assign(hint.style, { fontSize: "12px", color: "#737373", margin: "8px 0 0" });
+    hint.textContent = `Open the Cartify extension and upload a photo of your ${missingPhoto} in your profile to try on this product.`;
+    wrapper.appendChild(hint);
+  }
+
+  const btnRow = document.createElement("div");
+  Object.assign(btnRow.style, {
+    display: "flex", gap: "8px", justifyContent: "center", marginTop: "16px",
+  });
+
+  const retryBtn = document.createElement("button");
+  retryBtn.id = "cartify-modal-retry";
+  retryBtn.textContent = "Retry";
+  Object.assign(retryBtn.style, {
+    padding: "8px 20px", border: "1px solid #e5e5e5", borderRadius: "8px",
+    background: "#fff", color: "#171717", fontSize: "13px",
+    fontWeight: "500", cursor: "pointer",
+  });
+  btnRow.appendChild(retryBtn);
+
+  const closeBtn = document.createElement("button");
+  closeBtn.id = "cartify-modal-close";
+  closeBtn.textContent = "Close";
+  Object.assign(closeBtn.style, {
+    padding: "8px 20px", border: "none", borderRadius: "8px",
+    background: "#171717", color: "#fff", fontSize: "13px",
+    fontWeight: "600", cursor: "pointer",
+  });
+  closeBtn.addEventListener("click", () => removeModal());
+  btnRow.appendChild(closeBtn);
+
+  wrapper.appendChild(btnRow);
+  body.appendChild(wrapper);
 }
 
 export function getRetryButton(): HTMLElement | null {

@@ -4,13 +4,10 @@ import {
   injectLoginPill,
   removeLoginPill,
   showModal,
-  setModalProduct,
   updateModalSuccess,
   updateModalError,
   getRetryButton,
 } from "./ui";
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
 /** Check if the current page looks like a product/shopping page */
 function isProductPage(): boolean {
@@ -126,7 +123,6 @@ function doTryOn() {
   }
 
   showModal();
-  setModalProduct(product.product_url, SUPABASE_URL);
 
   chrome.runtime.sendMessage(
     { type: "CARTIFY_TRYON_REQUEST", payload: product },
