@@ -408,7 +408,13 @@ export function CartifyApp({ mode }: CartifyAppProps) {
     `${SUPABASE_URL}/functions/v1/redirect?target=${encodeURIComponent(r.page_url)}&retailerDomain=${r.retailer_domain ?? ""}`;
 
   return (
-    <div className={containerClass}>
+    <div className={containerClass + " relative"}>
+      {/* Share toast */}
+      {shareToast && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 rounded-lg bg-foreground px-4 py-2 text-[12px] font-medium text-background shadow-lg animate-in fade-in slide-in-from-top-2 duration-200">
+          {shareToast}
+        </div>
+      )}
       {/* ── Fixed header ── */}
       <div className="shrink-0 px-5 pt-4 pb-2">
         <div className="flex items-center justify-between">
