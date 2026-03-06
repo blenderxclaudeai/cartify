@@ -123,7 +123,6 @@ function doTryOn() {
   }
 
   showModal();
-  setModalProduct(product.product_url, SUPABASE_URL);
 
   chrome.runtime.sendMessage(
     { type: "CARTIFY_TRYON_REQUEST", payload: product },

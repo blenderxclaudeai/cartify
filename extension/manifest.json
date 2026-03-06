@@ -3,7 +3,7 @@
   "name": "Cartify — Virtual Try-On",
   "version": "1.2.0",
   "description": "Try products on yourself before you buy.",
-  "permissions": ["storage", "activeTab", "identity", "tabs", "sidePanel", "alarms"],
+  "permissions": ["storage", "identity", "sidePanel", "alarms"],
   "host_permissions": ["<all_urls>"],
   "action": {
     "default_popup": "popup.html"
