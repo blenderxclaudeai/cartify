@@ -109,15 +109,28 @@ export default function Showroom() {
 
       if (navigator.share && navigator.canShare?.({ files: [file] })) {
         await navigator.share({ files: [file], title: r.title || "My try-on look" });
-      } else {
+        return;
+      }
+
+      try {
         await navigator.clipboard.write([
           new ClipboardItem({ [blob.type]: blob }),
         ]);
         setShareToast("Image copied to clipboard!");
         setTimeout(() => setShareToast(null), 2500);
-      }
+        return;
+      } catch {}
+
+      await handleDownload(r);
+      setShareToast("Image downloaded!");
+      setTimeout(() => setShareToast(null), 2500);
     } catch {
-      setShareToast("Couldn't share — try downloading instead");
+      try {
+        await handleDownload(r);
+        setShareToast("Image downloaded!");
+      } catch {
+        setShareToast("Couldn't share or download");
+      }
       setTimeout(() => setShareToast(null), 2500);
     }
   };
