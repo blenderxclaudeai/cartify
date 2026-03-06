@@ -4,7 +4,7 @@ import { signInWithOAuth, signOut } from "@ext/lib/auth";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
 
-type Screen = "profile" | "showroom" | "settings";
+type Screen = "session" | "showroom" | "profile" | "settings";
 
 interface StoredUser {
   id: string;
@@ -22,6 +22,19 @@ interface TryonResult {
   price: string | null;
   page_url: string;
   retailer_domain: string | null;
+}
+
+interface SessionItem {
+  id: string;
+  product_url: string;
+  product_title: string | null;
+  product_image: string | null;
+  product_price: string | null;
+  retailer_domain: string | null;
+  interaction_type: string;
+  in_cart: boolean;
+  tryon_request_id: string | null;
+  created_at: string;
 }
 
 interface PhotoRecord {
@@ -58,11 +71,15 @@ export function CartifyApp({ mode }: CartifyAppProps) {
   const [storedUser, setStoredUser] = useState<StoredUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
-  const [screen, setScreen] = useState<Screen>("profile");
+  const [screen, setScreen] = useState<Screen>("session");
 
   // Try-on state
   const [results, setResults] = useState<TryonResult[]>([]);
   const [resultsLoading, setResultsLoading] = useState(false);
+
+  // Session state
+  const [sessionItems, setSessionItems] = useState<SessionItem[]>([]);
+  const [sessionLoading, setSessionLoading] = useState(false);
 
   // Profile photo state
   const [photos, setPhotos] = useState<PhotoRecord[]>([]);
@@ -145,6 +162,52 @@ export function CartifyApp({ mode }: CartifyAppProps) {
     });
   }, [storedUser, screen]);
 
+  // Load session items
+  useEffect(() => {
+    if (!storedUser || screen !== "session") return;
+    setSessionLoading(true);
+
+    chrome.storage.local.get("cartify_auth_token", async (result) => {
+      const token = result.cartify_auth_token;
+      if (!token) { setSessionLoading(false); return; }
+
+      try {
+        // Get active session
+        const sessRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/shopping_sessions?user_id=eq.${storedUser.id}&is_active=eq.true&expires_at=gt.${new Date().toISOString()}&order=started_at.desc&limit=1`,
+          {
+            headers: {
+              apikey: SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        const sessions = await sessRes.json();
+        if (!Array.isArray(sessions) || sessions.length === 0) {
+          setSessionItems([]);
+          setSessionLoading(false);
+          return;
+        }
+
+        const sessionId = sessions[0].id;
+        const itemsRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/session_items?session_id=eq.${sessionId}&order=created_at.desc`,
+          {
+            headers: {
+              apikey: SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        const items = await itemsRes.json();
+        setSessionItems(Array.isArray(items) ? items : []);
+      } catch {
+        setSessionItems([]);
+      }
+      setSessionLoading(false);
+    });
+  }, [storedUser, screen]);
+
   // Load profile photos
   useEffect(() => {
     if (!storedUser || screen !== "profile") return;
@@ -212,7 +275,8 @@ export function CartifyApp({ mode }: CartifyAppProps) {
     setStoredUser(null);
     setResults([]);
     setPhotos([]);
-    setScreen("profile");
+    setSessionItems([]);
+    setScreen("session");
   };
 
   const handleUpload = async (category: string, file: File) => {
@@ -273,7 +337,6 @@ export function CartifyApp({ mode }: CartifyAppProps) {
   const handleDisplayModeChange = (newMode: "popup" | "sidepanel") => {
     setDisplayMode(newMode);
     chrome.storage.local.set({ cartify_display_mode: newMode });
-    // Notify background to dynamically toggle popup vs side panel behavior
     chrome.runtime.sendMessage({ type: "DISPLAY_MODE_CHANGED", mode: newMode });
   };
 
@@ -304,15 +367,31 @@ export function CartifyApp({ mode }: CartifyAppProps) {
 
       if (navigator.share && navigator.canShare?.({ files: [file] })) {
         await navigator.share({ files: [file], title: r.title || "My try-on look" });
-      } else {
+        return;
+      }
+
+      // Try clipboard
+      try {
         await navigator.clipboard.write([
           new ClipboardItem({ [blob.type]: blob }),
         ]);
         setShareToast("Image copied to clipboard!");
         setTimeout(() => setShareToast(null), 2500);
-      }
+        return;
+      } catch {}
+
+      // Fallback: auto-download
+      await handleDownload(r);
+      setShareToast("Image downloaded!");
+      setTimeout(() => setShareToast(null), 2500);
     } catch {
-      setShareToast("Couldn't share — try downloading instead");
+      // Final fallback: try download
+      try {
+        await handleDownload(r);
+        setShareToast("Image downloaded!");
+      } catch {
+        setShareToast("Couldn't share or download");
+      }
       setTimeout(() => setShareToast(null), 2500);
     }
   };
@@ -324,6 +403,64 @@ export function CartifyApp({ mode }: CartifyAppProps) {
       (response) => {
         if (response?.ok) {
           setScreen("showroom");
+        }
+      }
+    );
+  };
+
+  const handleRemoveSessionItem = async (item: SessionItem) => {
+    const stored = await chrome.storage.local.get("cartify_auth_token");
+    const token = stored.cartify_auth_token;
+    if (!token) return;
+
+    await fetch(`${SUPABASE_URL}/rest/v1/session_items?id=eq.${item.id}`, {
+      method: "DELETE",
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    setSessionItems((prev) => prev.filter((i) => i.id !== item.id));
+  };
+
+  const handleToggleCart = async (item: SessionItem) => {
+    const stored = await chrome.storage.local.get("cartify_auth_token");
+    const token = stored.cartify_auth_token;
+    if (!token) return;
+
+    const newInCart = !item.in_cart;
+    await fetch(`${SUPABASE_URL}/rest/v1/session_items?id=eq.${item.id}`, {
+      method: "PATCH",
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({ in_cart: newInCart, interaction_type: newInCart ? "cart" : "viewed" }),
+    });
+    setSessionItems((prev) =>
+      prev.map((i) =>
+        i.id === item.id ? { ...i, in_cart: newInCart, interaction_type: newInCart ? "cart" : "viewed" } : i
+      )
+    );
+  };
+
+  const handleTryOnSessionItem = (item: SessionItem) => {
+    chrome.runtime.sendMessage(
+      {
+        type: "CARTIFY_TRYON_REQUEST",
+        payload: {
+          product_url: item.product_url,
+          product_title: item.product_title || "",
+          product_image: item.product_image || "",
+        },
+        background: true,
+      },
+      (response) => {
+        if (response?.ok) {
+          setShareToast("Try-on queued!");
+          setTimeout(() => setShareToast(null), 2500);
         }
       }
     );
@@ -404,6 +541,13 @@ export function CartifyApp({ mode }: CartifyAppProps) {
   const completedResults = results.filter((r) => r.result_image_url);
   const pendingResults = results.filter((r) => !r.result_image_url);
 
+  const cartItems = sessionItems.filter((i) => i.in_cart);
+  const cartTotal = cartItems.reduce((sum, i) => {
+    if (!i.product_price) return sum;
+    const num = parseFloat(i.product_price.replace(/[^0-9.]/g, ""));
+    return isNaN(num) ? sum : sum + num;
+  }, 0);
+
   const getAffiliateUrl = (r: TryonResult) =>
     `${SUPABASE_URL}/functions/v1/redirect?target=${encodeURIComponent(r.page_url)}&retailerDomain=${r.retailer_domain ?? ""}`;
 
@@ -466,14 +610,19 @@ export function CartifyApp({ mode }: CartifyAppProps) {
       )}
 
       {/* ── Fixed sub-header ── */}
-      {screen === "profile" ? (
+      {screen === "session" ? (
+        <div className="shrink-0 px-5 pb-2 pt-1">
+          <h2 className="text-[16px] font-semibold tracking-tight text-foreground">Shopping Session</h2>
+          <p className="text-[11px] text-muted-foreground">Products you've interacted with today</p>
+        </div>
+      ) : screen === "profile" ? (
         <div className="shrink-0 px-5 pb-2">
           <p className="text-[11px] text-muted-foreground">Your photos for virtual try-on</p>
         </div>
       ) : screen === "showroom" ? (
         <div className="shrink-0 px-5 pb-2 pt-1 text-center">
           <h2 className="text-[20px] font-semibold tracking-tight text-foreground">Showroom</h2>
-          <p className="mt-1 text-[12px] text-muted-foreground">See how products look on you</p>
+          <p className="mt-1 text-[12px] text-muted-foreground">Today's try-ons · resets daily</p>
         </div>
       ) : (
         <div className="shrink-0 px-5 pb-2 pt-1">
@@ -483,7 +632,128 @@ export function CartifyApp({ mode }: CartifyAppProps) {
 
       {/* ── Scrollable content ── */}
       <div className="flex-1 overflow-y-auto px-5 pb-3 scrollbar-hide">
-        {screen === "profile" ? (
+        {screen === "session" ? (
+          /* ── SESSION CONTENT ── */
+          <div className="py-2">
+            {sessionLoading ? (
+              <div className="space-y-3">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="flex gap-3 animate-pulse">
+                    <div className="h-14 w-14 rounded-lg bg-secondary" />
+                    <div className="flex-1 space-y-2 py-1">
+                      <div className="h-3 w-3/4 rounded bg-secondary" />
+                      <div className="h-2.5 w-1/2 rounded bg-secondary" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : sessionItems.length === 0 ? (
+              <div className="flex flex-col items-center justify-center text-center py-10">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary">
+                  <span className="text-[20px] text-muted-foreground">🛍</span>
+                </div>
+                <p className="mt-3 text-[13px] font-medium text-foreground">No activity yet</p>
+                <p className="mt-1 max-w-[220px] text-[11px] leading-relaxed text-muted-foreground">
+                  Browse any store and try on or save products — they'll appear here.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Cart summary */}
+                {cartItems.length > 0 && (
+                  <div className="rounded-xl border border-border bg-secondary/30 p-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[12px] font-medium text-foreground">
+                        Cart · {cartItems.length} item{cartItems.length !== 1 ? "s" : ""}
+                      </p>
+                      {cartTotal > 0 && (
+                        <p className="text-[13px] font-semibold text-foreground">
+                          ~${cartTotal.toFixed(2)}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Item list */}
+                <div className="space-y-2">
+                  {sessionItems.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-3 rounded-xl border border-border bg-background p-2.5 transition-colors hover:bg-secondary/30"
+                    >
+                      {item.product_image ? (
+                        <img
+                          src={item.product_image}
+                          alt={item.product_title || "Product"}
+                          className="h-14 w-14 rounded-lg object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-secondary text-[18px] text-muted-foreground">
+                          🏷
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="truncate text-[12px] font-medium text-foreground">
+                          {item.product_title || "Product"}
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          {item.product_price && (
+                            <span className="text-[10px] text-muted-foreground">{item.product_price}</span>
+                          )}
+                          {item.retailer_domain && (
+                            <span className="text-[10px] text-muted-foreground/50">{item.retailer_domain}</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 mt-1.5">
+                          {item.in_cart ? (
+                            <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[9px] font-medium text-foreground">
+                              In Cart
+                            </span>
+                          ) : null}
+                          {item.interaction_type === "tryon_requested" || item.interaction_type === "tryon_completed" ? (
+                            <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[9px] font-medium text-foreground">
+                              Try-on
+                            </span>
+                          ) : null}
+                          {item.interaction_type === "saved" ? (
+                            <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[9px] font-medium text-foreground">
+                              Saved
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <button
+                          onClick={() => handleToggleCart(item)}
+                          title={item.in_cart ? "Remove from cart" : "Add to cart"}
+                          className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill={item.in_cart ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+                        </button>
+                        <button
+                          onClick={() => handleTryOnSessionItem(item)}
+                          title="Try on"
+                          className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7l7.4 6.16a1 1 0 0 1-.74 1.84H4.34a1 1 0 0 1-.74-1.84L11 7V5.73A2 2 0 0 1 12 2z"/><path d="M2 20h20"/></svg>
+                        </button>
+                        <button
+                          onClick={() => handleRemoveSessionItem(item)}
+                          title="Remove"
+                          className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-destructive"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : screen === "profile" ? (
           <div className="grid grid-cols-2 gap-3 pt-1">
             {CATEGORIES.map((cat) => {
               const photo = photos.find((p) => p.category === cat.key);
@@ -574,6 +844,7 @@ export function CartifyApp({ mode }: CartifyAppProps) {
                           src={r.result_image_url!}
                           alt={r.title || "Try-on result"}
                           className="aspect-[3/4] w-full rounded-xl object-cover"
+                          loading="lazy"
                         />
                         {(r.title || r.price) && (
                           <div className="mt-1.5 px-0.5">
@@ -635,6 +906,7 @@ export function CartifyApp({ mode }: CartifyAppProps) {
                             src={r.image_url}
                             alt={r.title || "Processing"}
                             className="aspect-[3/4] w-full rounded-xl object-cover opacity-50"
+                            loading="lazy"
                           />
                           <div className="absolute inset-0 flex items-center justify-center">
                             <span className="rounded-lg bg-background/80 px-2 py-1 text-[11px] font-medium text-muted-foreground">
@@ -700,14 +972,14 @@ export function CartifyApp({ mode }: CartifyAppProps) {
       <div className="shrink-0 border-t">
         <nav className="flex items-center justify-around px-2 py-2.5">
           <button
-            onClick={() => setScreen("profile")}
+            onClick={() => setScreen("session")}
             className={`text-[12px] font-medium tracking-tight transition-colors ${
-              screen === "profile"
+              screen === "session"
                 ? "text-foreground"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            Profile
+            Session
           </button>
           <button
             onClick={() => setScreen("showroom")}
@@ -718,6 +990,16 @@ export function CartifyApp({ mode }: CartifyAppProps) {
             }`}
           >
             Showroom
+          </button>
+          <button
+            onClick={() => setScreen("profile")}
+            className={`text-[12px] font-medium tracking-tight transition-colors ${
+              screen === "profile"
+                ? "text-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Profile
           </button>
         </nav>
         <p className="text-[9px] text-muted-foreground/50 text-center pb-2">

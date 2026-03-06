@@ -1,6 +1,5 @@
 /**
- * Background service worker — centralized auth manager + try-on requests.
- * All auth logic lives here. UI communicates via chrome.runtime.sendMessage.
+ * Background service worker — centralized auth manager + try-on requests + shopping sessions.
  */
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -10,11 +9,10 @@ const WEB_APP_URL = "https://ddsasdkse.lovable.app";
 const TOKEN_REFRESH_ALARM = "cartify_token_refresh";
 const AUTH_TIMEOUT_ALARM = "cartify_auth_timeout";
 
-// Track pending auth tab so we can close it after session sync
 let pendingAuthTabId: number | null = null;
 let pendingAuthResolve: ((result: { ok: boolean; error?: string }) => void) | null = null;
 
-// ── Alarm helper (idempotent, safe to call on every startup) ──
+// ── Alarm helper ──
 
 async function ensureTokenRefreshAlarm() {
   const existing = await chrome.alarms.get(TOKEN_REFRESH_ALARM);
@@ -23,7 +21,6 @@ async function ensureTokenRefreshAlarm() {
   }
 }
 
-// Ensure alarm exists whenever service worker starts
 ensureTokenRefreshAlarm().catch((e) =>
   console.warn("[Cartify] alarm init failed:", e)
 );
@@ -34,7 +31,6 @@ async function doOAuthLogin(provider: "google" | "apple"): Promise<{ ok: boolean
   const authUrl = `${WEB_APP_URL}/auth/extension?provider=${provider}`;
 
   return new Promise((resolve) => {
-    // Store resolve so CARTIFY_SESSION_FROM_WEB can complete it
     pendingAuthResolve = resolve;
 
     chrome.tabs.create({ url: authUrl, active: true }, (tab) => {
@@ -44,8 +40,6 @@ async function doOAuthLogin(provider: "google" | "apple"): Promise<{ ok: boolean
         return;
       }
       pendingAuthTabId = tab.id;
-
-      // Set a 2-minute timeout alarm
       chrome.alarms.create(AUTH_TIMEOUT_ALARM, { delayInMinutes: 2 });
     });
   });
@@ -107,26 +101,19 @@ async function refreshToken(): Promise<boolean> {
   }
 }
 
-// ── Helper: close auth tab + resolve pending promise ──
-
 function completeAuth(result: { ok: boolean; error?: string }) {
-  // Clear timeout alarm
   chrome.alarms.clear(AUTH_TIMEOUT_ALARM);
-
-  // Close the auth tab
   if (pendingAuthTabId !== null) {
     try { chrome.tabs.remove(pendingAuthTabId); } catch {}
     pendingAuthTabId = null;
   }
-
-  // Resolve the pending promise
   if (pendingAuthResolve) {
     pendingAuthResolve(result);
     pendingAuthResolve = null;
   }
 }
 
-// ── Display mode: dynamically toggle popup vs side panel (fail-safe) ──
+// ── Display mode ──
 
 async function applyDisplayMode(mode: "popup" | "sidepanel") {
   if (mode === "sidepanel") {
@@ -134,7 +121,6 @@ async function applyDisplayMode(mode: "popup" | "sidepanel") {
       !!(chrome.sidePanel && typeof (chrome.sidePanel as any).setPanelBehavior === "function");
 
     if (!sidePanelSupported) {
-      console.log("[Cartify] Side Panel API not supported; reverting to popup.");
       await chrome.action.setPopup({ popup: "popup.html" });
       await chrome.storage.local.set({ cartify_display_mode: "popup" });
       return;
@@ -144,7 +130,6 @@ async function applyDisplayMode(mode: "popup" | "sidepanel") {
     try {
       await (chrome.sidePanel as any).setPanelBehavior({ openPanelOnActionClick: true });
     } catch (e) {
-      console.log("[Cartify] setPanelBehavior failed; reverting to popup:", e);
       await chrome.action.setPopup({ popup: "popup.html" });
       await chrome.storage.local.set({ cartify_display_mode: "popup" });
     }
@@ -154,9 +139,125 @@ async function applyDisplayMode(mode: "popup" | "sidepanel") {
       if (chrome.sidePanel && typeof (chrome.sidePanel as any).setPanelBehavior === "function") {
         await (chrome.sidePanel as any).setPanelBehavior({ openPanelOnActionClick: false });
       }
-    } catch (e) {
-      console.log("[Cartify] setPanelBehavior not supported:", e);
+    } catch {}
+  }
+}
+
+// ── Shopping Session helpers ──
+
+async function getAuthHeaders(): Promise<Record<string, string> | null> {
+  const stored = await chrome.storage.local.get("cartify_auth_token");
+  if (!stored.cartify_auth_token) return null;
+  return {
+    apikey: SUPABASE_ANON_KEY,
+    Authorization: `Bearer ${stored.cartify_auth_token}`,
+    "Content-Type": "application/json",
+  };
+}
+
+async function ensureSession(): Promise<string | null> {
+  const headers = await getAuthHeaders();
+  if (!headers) return null;
+
+  const stored = await chrome.storage.local.get("cartify_user");
+  const userId = stored.cartify_user?.id;
+  if (!userId) return null;
+
+  try {
+    // Check for existing active session
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/shopping_sessions?user_id=eq.${userId}&is_active=eq.true&expires_at=gt.${new Date().toISOString()}&order=started_at.desc&limit=1`,
+      { headers }
+    );
+    const sessions = await res.json();
+
+    if (Array.isArray(sessions) && sessions.length > 0) {
+      return sessions[0].id;
     }
+
+    // Create new session
+    const createRes = await fetch(`${SUPABASE_URL}/rest/v1/shopping_sessions`, {
+      method: "POST",
+      headers: { ...headers, Prefer: "return=representation" },
+      body: JSON.stringify({ user_id: userId }),
+    });
+    const created = await createRes.json();
+    if (Array.isArray(created) && created.length > 0) {
+      return created[0].id;
+    }
+    return null;
+  } catch (e) {
+    console.error("[Cartify] ensureSession error:", e);
+    return null;
+  }
+}
+
+async function addSessionItem(
+  payload: any,
+  interactionType: string,
+  inCart: boolean = false,
+  tryonRequestId?: string
+): Promise<void> {
+  const headers = await getAuthHeaders();
+  if (!headers) return;
+
+  const stored = await chrome.storage.local.get("cartify_user");
+  const userId = stored.cartify_user?.id;
+  if (!userId) return;
+
+  const sessionId = await ensureSession();
+  if (!sessionId) return;
+
+  try {
+    // Check if item already exists in this session
+    const checkRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/session_items?session_id=eq.${sessionId}&product_url=eq.${encodeURIComponent(payload.product_url)}&limit=1`,
+      { headers }
+    );
+    const existing = await checkRes.json();
+
+    if (Array.isArray(existing) && existing.length > 0) {
+      // Update existing item
+      const updateBody: any = {
+        interaction_type: interactionType,
+        updated_at: new Date().toISOString(),
+      };
+      if (inCart) updateBody.in_cart = true;
+      if (tryonRequestId) updateBody.tryon_request_id = tryonRequestId;
+
+      await fetch(
+        `${SUPABASE_URL}/rest/v1/session_items?id=eq.${existing[0].id}`,
+        {
+          method: "PATCH",
+          headers: { ...headers, Prefer: "return=minimal" },
+          body: JSON.stringify(updateBody),
+        }
+      );
+    } else {
+      // Insert new item
+      const domain = payload.product_url
+        ? (() => { try { return new URL(payload.product_url).hostname.replace(/^www\./, ""); } catch { return null; } })()
+        : null;
+
+      await fetch(`${SUPABASE_URL}/rest/v1/session_items`, {
+        method: "POST",
+        headers: { ...headers, Prefer: "return=minimal" },
+        body: JSON.stringify({
+          session_id: sessionId,
+          user_id: userId,
+          product_url: payload.product_url,
+          product_title: payload.product_title || null,
+          product_image: payload.product_image || null,
+          product_price: payload.product_price || null,
+          retailer_domain: payload.retailer_domain || domain,
+          interaction_type: interactionType,
+          in_cart: inCart,
+          tryon_request_id: tryonRequestId || null,
+        }),
+      });
+    }
+  } catch (e) {
+    console.error("[Cartify] addSessionItem error:", e);
   }
 }
 
@@ -166,8 +267,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg?.type) return;
 
   if (msg.type === "AUTH_LOGIN") {
-    const provider = msg.provider || "google";
-    doOAuthLogin(provider).then(sendResponse);
+    doOAuthLogin(msg.provider || "google").then(sendResponse);
     return true;
   }
 
@@ -186,13 +286,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
 
-  // Legacy: CARTIFY_GET_AUTH (used by content scripts)
   if (msg.type === "CARTIFY_GET_AUTH") {
     getAuthState().then(sendResponse);
     return true;
   }
 
-  // Session sync from web app content script (webAppSync.js)
   if (msg.type === "CARTIFY_SESSION_FROM_WEB") {
     const { access_token, refresh_token, user } = msg.payload;
     chrome.storage.local.set(
@@ -203,14 +301,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       },
       () => {
         sendResponse({ ok: true });
-        // Complete the pending auth flow — close tab + resolve promise
         completeAuth({ ok: true });
       }
     );
     return true;
   }
 
-  // PRODUCT_DETECTED — store pending product from content script
   if (msg.type === "PRODUCT_DETECTED") {
     chrome.storage.local.set({ cartify_pending_product: msg.payload }, () => {
       sendResponse({ ok: true });
@@ -218,14 +314,26 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
 
-  // CARTIFY_TRYON_REQUEST
   if (msg.type === "CARTIFY_TRYON_REQUEST") {
     const { payload, background } = msg;
     handleTryOn(payload, !!background).then(sendResponse);
     return true;
   }
 
-  // DISPLAY_MODE_CHANGED — apply popup/sidepanel toggle
+  if (msg.type === "CARTIFY_ADD_TO_CART") {
+    addSessionItem(msg.payload, "cart", true).then(() => {
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
+
+  if (msg.type === "CARTIFY_SAVE_PRODUCT") {
+    addSessionItem(msg.payload, "saved").then(() => {
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
+
   if (msg.type === "DISPLAY_MODE_CHANGED") {
     applyDisplayMode(msg.mode).then(() => sendResponse({ ok: true }));
     return true;
@@ -245,7 +353,7 @@ async function handleTryOn(payload: any, background = false): Promise<any> {
       return { ok: false, error: "NOT_LOGGED_IN" };
     }
 
-    // Duplicate protection: skip if same product_url was submitted within 60s
+    // Duplicate protection
     const recent: any[] = stored.cartify_recent_tryons || [];
     if (payload.product_url) {
       const now = Date.now();
@@ -288,7 +396,6 @@ async function handleTryOn(payload: any, background = false): Promise<any> {
       };
     }
 
-    // Guard: never persist data URLs
     const safeImageUrl =
       typeof data.resultImageUrl === "string" && data.resultImageUrl.startsWith("data:")
         ? null
@@ -302,7 +409,6 @@ async function handleTryOn(payload: any, background = false): Promise<any> {
       timestamp: Date.now(),
     };
 
-    // Add to recent_tryons list (capped at 20)
     recent.unshift(result);
     if (recent.length > 20) recent.length = 20;
 
@@ -310,12 +416,14 @@ async function handleTryOn(payload: any, background = false): Promise<any> {
       cartify_recent_tryons: recent,
     };
 
-    // Only write last_result for foreground (modal) requests
     if (!background) {
       storageUpdate.cartify_last_result = result;
     }
 
     await chrome.storage.local.set(storageUpdate);
+
+    // Also track in shopping session
+    addSessionItem(payload, "tryon_requested", false, data.tryOnId).catch(() => {});
 
     return {
       ok: true,
@@ -349,7 +457,6 @@ chrome.runtime.onInstalled.addListener(async () => {
   await ensureTokenRefreshAlarm();
 });
 
-// Listen for display mode changes from storage
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes.cartify_display_mode?.newValue) {
     applyDisplayMode(changes.cartify_display_mode.newValue);
@@ -368,7 +475,6 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 
   if (alarm.name === AUTH_TIMEOUT_ALARM) {
-    // Auth timed out — close tab and reject
     completeAuth({ ok: false, error: "Sign-in timed out. Please try again." });
   }
 });

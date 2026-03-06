@@ -109,15 +109,28 @@ export default function Showroom() {
 
       if (navigator.share && navigator.canShare?.({ files: [file] })) {
         await navigator.share({ files: [file], title: r.title || "My try-on look" });
-      } else {
+        return;
+      }
+
+      try {
         await navigator.clipboard.write([
           new ClipboardItem({ [blob.type]: blob }),
         ]);
         setShareToast("Image copied to clipboard!");
         setTimeout(() => setShareToast(null), 2500);
-      }
+        return;
+      } catch {}
+
+      await handleDownload(r);
+      setShareToast("Image downloaded!");
+      setTimeout(() => setShareToast(null), 2500);
     } catch {
-      setShareToast("Couldn't share — try downloading instead");
+      try {
+        await handleDownload(r);
+        setShareToast("Image downloaded!");
+      } catch {
+        setShareToast("Couldn't share or download");
+      }
       setTimeout(() => setShareToast(null), 2500);
     }
   };
@@ -133,7 +146,7 @@ export default function Showroom() {
         {/* Header */}
         <div className="pt-2 text-center">
           <h1 className="text-[28px] font-semibold tracking-tight text-foreground">Showroom</h1>
-          <p className="mt-1 text-[14px] text-muted-foreground">See how products look on you</p>
+          <p className="mt-1 text-[14px] text-muted-foreground">Today's try-ons · resets daily</p>
         </div>
 
         {/* Content */}
@@ -160,11 +173,12 @@ export default function Showroom() {
                 <div className="grid grid-cols-2 gap-3">
                   {completedResults.map(r => (
                     <div key={r.id} className="group relative">
-                      <img
-                        src={r.result_image_url!}
-                        alt={r.title || "Try-on result"}
-                        className="aspect-[3/4] w-full rounded-xl object-cover"
-                      />
+                        <img
+                          src={r.result_image_url!}
+                          alt={r.title || "Try-on result"}
+                          className="aspect-[3/4] w-full rounded-xl object-cover"
+                          loading="lazy"
+                        />
                       {(r.title || r.price || r.retailer_domain) && (
                         <div className="mt-1.5 px-0.5">
                           {r.title && <p className="truncate text-[12px] font-medium text-foreground">{r.title}</p>}

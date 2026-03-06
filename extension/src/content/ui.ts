@@ -233,8 +233,10 @@ function removeModal() {
 // ── Inline card buttons for listing pages ──
 
 const CARD_BTN_ATTR = "data-cartify-card-btn";
+const CART_BTN_ATTR = "data-cartify-cart-btn";
 
 const HANGER_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a2 2 0 0 1 2 2c0 .74-.4 1.39-1 1.73V7l7.4 6.16a1 1 0 0 1-.74 1.84H4.34a1 1 0 0 1-.74-1.84L11 7V5.73A2 2 0 0 1 12 2z"/><path d="M2 20h20"/></svg>`;
+const CART_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>`;
 const CHECK_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
 const X_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
 
@@ -339,8 +341,70 @@ export function setCardButtonState(btn: HTMLElement, state: CardButtonState) {
   }
 }
 
+export function injectCartButton(
+  container: HTMLElement,
+  onClick: () => void
+): HTMLElement {
+  const existing = container.querySelector(`[${CART_BTN_ATTR}]`);
+  if (existing) return existing as HTMLElement;
+
+  const pos = getComputedStyle(container).position;
+  if (pos === "static" || pos === "") {
+    container.style.position = "relative";
+  }
+
+  const btn = document.createElement("button");
+  btn.setAttribute(CART_BTN_ATTR, "true");
+  btn.innerHTML = CART_SVG;
+  Object.assign(btn.style, {
+    position: "absolute",
+    top: "44px",
+    right: "8px",
+    zIndex: "999",
+    width: "30px",
+    height: "30px",
+    padding: "0",
+    border: "none",
+    borderRadius: "50%",
+    background: "rgba(23,23,23,0.7)",
+    color: "#fff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+    opacity: "0.6",
+    transition: "opacity 0.15s ease, transform 0.15s ease, background 0.15s ease",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+    fontFamily: "inherit",
+    lineHeight: "1",
+  });
+
+  btn.addEventListener("mouseenter", () => { btn.style.opacity = "1"; btn.style.transform = "scale(1.1)"; });
+  btn.addEventListener("mouseleave", () => { btn.style.opacity = "0.6"; btn.style.transform = "scale(1)"; });
+  btn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onClick();
+  });
+
+  container.appendChild(btn);
+  return btn;
+}
+
+export function setCartButtonDone(btn: HTMLElement) {
+  btn.innerHTML = CHECK_SVG;
+  btn.style.background = "#16a34a";
+  btn.style.opacity = "1";
+  setTimeout(() => {
+    btn.innerHTML = CART_SVG;
+    btn.style.background = "rgba(23,23,23,0.7)";
+    btn.style.opacity = "0.6";
+  }, 2000);
+}
+
 export function removeAllCardButtons(): void {
   document.querySelectorAll(`[${CARD_BTN_ATTR}]`).forEach((el) => el.remove());
+  document.querySelectorAll(`[${CART_BTN_ATTR}]`).forEach((el) => el.remove());
 }
 
 // ── Toast notification ──

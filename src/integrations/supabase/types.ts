@@ -122,6 +122,93 @@ export type Database = {
         }
         Relationships: []
       }
+      session_items: {
+        Row: {
+          created_at: string
+          id: string
+          in_cart: boolean
+          interaction_type: string
+          product_image: string | null
+          product_price: string | null
+          product_title: string | null
+          product_url: string
+          retailer_domain: string | null
+          session_id: string
+          tryon_request_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          in_cart?: boolean
+          interaction_type?: string
+          product_image?: string | null
+          product_price?: string | null
+          product_title?: string | null
+          product_url: string
+          retailer_domain?: string | null
+          session_id: string
+          tryon_request_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          in_cart?: boolean
+          interaction_type?: string
+          product_image?: string | null
+          product_price?: string | null
+          product_title?: string | null
+          product_url?: string
+          retailer_domain?: string | null
+          session_id?: string
+          tryon_request_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_items_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "shopping_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_items_tryon_request_id_fkey"
+            columns: ["tryon_request_id"]
+            isOneToOne: false
+            referencedRelation: "tryon_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shopping_sessions: {
+        Row: {
+          expires_at: string
+          id: string
+          is_active: boolean
+          started_at: string
+          user_id: string
+        }
+        Insert: {
+          expires_at?: string
+          id?: string
+          is_active?: boolean
+          started_at?: string
+          user_id: string
+        }
+        Update: {
+          expires_at?: string
+          id?: string
+          is_active?: boolean
+          started_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       tryon_requests: {
         Row: {
           created_at: string
@@ -228,6 +315,8 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      cleanup_expired_sessions: { Args: never; Returns: undefined }
+      cleanup_old_tryons: { Args: never; Returns: undefined }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

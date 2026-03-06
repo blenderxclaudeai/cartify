@@ -12,6 +12,8 @@ import {
   setCardButtonState,
   removeAllCardButtons,
   showToastNotification,
+  injectCartButton,
+  setCartButtonDone,
 } from "./ui";
 
 /** Check if the current page looks like a product/shopping page */
@@ -100,6 +102,34 @@ function setupListingButtons() {
 
 function injectCardButtonOnCard(card: HTMLElement) {
   const btn = injectCardButton(card, () => handleCardClick(card, btn));
+  // Also inject cart button
+  const cartBtn = injectCartButton(card, () => handleCartClick(card, cartBtn));
+}
+
+function handleCartClick(card: HTMLElement, btn: HTMLElement) {
+  const product = extractFromCard(card);
+  const payload = product || {
+    product_url: extractFallbackFromLink(card) || "",
+    product_title: "",
+    product_image: "",
+  };
+  if (!payload.product_url) {
+    showToastNotification("Could not identify product", "error");
+    return;
+  }
+  chrome.runtime.sendMessage(
+    { type: "CARTIFY_ADD_TO_CART", payload },
+    (response) => {
+      if (chrome.runtime.lastError) {
+        showToastNotification("Extension error", "error");
+        return;
+      }
+      if (response?.ok) {
+        setCartButtonDone(btn);
+        showToastNotification("Added to cart!");
+      }
+    }
+  );
 }
 
 function handleCardClick(card: HTMLElement, btn: HTMLElement) {
