@@ -1,61 +1,179 @@
 
 
-## Fix List: Login, Product Focus, Extension Polish
+## Plan: Shopping Session, Cart, Showroom Fixes
 
-### 1. Fix login flow — the /login 404 issue
+This is a large feature set. Here's a phased plan covering all items.
 
-The screenshot shows `/login` returning a 404. The OAuth redirect URL in `extension/src/lib/auth.ts` uses `chrome.identity.getRedirectURL()` which should work for the extension flow. However, the `webAppSync.ts` content script still sends `VTO_SESSION_FROM_WEB` — this suggests the OAuth flow is opening a browser tab to the website instead of using `chrome.identity`. 
+---
 
-**Root cause:** The `chrome.identity.launchWebAuthFlow` redirect URL (`chrome.identity.getRedirectURL()`) must be registered in the backend's OAuth redirect allowlist. If it's not, the provider may fall back to a web redirect. Also, the `redirect_to` parameter in the auth URL needs to match the extension's redirect URL pattern exactly.
+### Bug Fix: Share fallback
 
-**Fix:** Ensure the auth URL includes the correct `redirect_to` for chrome.identity. The current code looks correct — the issue is likely on the backend OAuth config side. We need to verify the redirect URL is whitelisted. But from the code side, the flow should work. The `/login` 404 happens because the old OAuth config redirects to `/login`. We should add `/login` as a catch-all redirect to `/` in `App.tsx` so users never see a 404 there.
+The `handleShare` in both `CartifyApp.tsx` and `Showroom.tsx` catches errors but shows "Couldn't share — try downloading instead" when both `navigator.share` and clipboard fail. In extension contexts, clipboard write often fails due to permissions. Fix: always attempt download as the final fallback instead of just showing a toast.
 
-**Files:** `src/App.tsx` — add a redirect from `/login` to `/`
+**Files:** `extension/src/shared/CartifyApp.tsx`, `src/pages/Showroom.tsx`
 
-### 2. Remove non-person categories from extension
+---
 
-Remove Home, Pets, Vehicle, Garden from `CATEGORY_GROUPS` in `Popup.tsx`. Keep only "You". Remove the tab bar entirely since there's only one group.
+### Showroom Image Loading
 
-**File:** `extension/src/popup/Popup.tsx`
+Images load slowly because `result_image_url` points to external URLs. Add `loading="lazy"` to images and show a placeholder skeleton while loading. No backend change needed.
 
-### 3. Update "Try on anything" section — remove home/garden products
+**Files:** `extension/src/shared/CartifyApp.tsx`, `src/pages/Showroom.tsx`
 
-Remove: Lamps, Chairs, Vases, Planters, Cushions from both `tryOnCategories` and `tryOnCategories2`. Keep only wearable/person items. The remaining person-focused items with white backgrounds: Dress, Sneakers, Watch, Sunglasses, Handbag, Ring, Jacket, Hat, Boots, Necklace, Blazer, Bracelet, Jeans, Heels.
+---
 
-Update the section subtitle to remove "home decor, garden" language.
+### Daily Showroom Reset
 
-Update the FAQ answer about "What kind of products can I try on?" to remove home decor mention.
+Create a scheduled edge function `cleanup-daily` that runs once per day and deletes `tryon_requests` older than 24 hours. Use a PostgreSQL cron job via `pg_cron` or a Supabase scheduled function.
 
-**File:** `src/pages/LandingPage.tsx`
+**DB Migration:**
+```sql
+-- No new table needed, just the edge function + a cron trigger
+-- Alternative: use a DB function + pg_cron
+CREATE OR REPLACE FUNCTION public.cleanup_old_tryons()
+RETURNS void
+LANGUAGE sql
+SECURITY DEFINER
+AS $$
+  DELETE FROM public.tryon_requests
+  WHERE created_at < now() - interval '24 hours';
+$$;
+```
 
-### 4. Fix content script login pill text
+**New file:** `supabase/functions/cleanup-daily/index.ts` — called via scheduled invocation or a simple cron.
 
-Change "Log in to Cartify to try on" → "Log in" (shorter, cleaner).
+---
 
-**File:** `extension/src/content/ui.ts`
+### New DB Tables: Shopping Sessions + Session Items
 
-### 5. Add Settings screen to extension
+```sql
+-- Shopping sessions: one active session per user per day
+CREATE TABLE public.shopping_sessions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  started_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL DEFAULT (now() + interval '24 hours'),
+  is_active boolean NOT NULL DEFAULT true
+);
 
-Add a third screen "settings" accessible from the header (gear icon next to Sign Out). Settings page includes:
-- **Display mode**: Radio/toggle between "Popup" and "Side Panel" — stores preference in `chrome.storage.local` as `cartify_display_mode`
-- Sign Out button moved here
+ALTER TABLE public.shopping_sessions ENABLE ROW LEVEL SECURITY;
 
-**File:** `extension/src/popup/Popup.tsx`
+CREATE POLICY "Users manage own sessions"
+ON public.shopping_sessions FOR ALL TO authenticated
+USING (user_id = auth.uid())
+WITH CHECK (user_id = auth.uid());
 
-### 6. Remaining VTO references
+-- Session items: products the user interacted with
+CREATE TABLE public.session_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id uuid NOT NULL REFERENCES public.shopping_sessions(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  product_url text NOT NULL,
+  product_title text,
+  product_image text,
+  product_price text,
+  retailer_domain text,
+  interaction_type text NOT NULL DEFAULT 'viewed',
+  -- interaction_type: 'viewed', 'saved', 'cart', 'tryon_requested', 'tryon_completed'
+  in_cart boolean NOT NULL DEFAULT false,
+  tryon_request_id uuid REFERENCES public.tryon_requests(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
 
-`webAppSync.ts` still uses `VTO_SESSION_FROM_WEB` message type and `background/index.ts` listens for it. Rename to `CARTIFY_SESSION_FROM_WEB` for consistency.
+ALTER TABLE public.session_items ENABLE ROW LEVEL SECURITY;
 
-**Files:** `extension/src/content/webAppSync.ts`, `extension/src/background/index.ts`
+CREATE POLICY "Users manage own session items"
+ON public.session_items FOR ALL TO authenticated
+USING (user_id = auth.uid())
+WITH CHECK (user_id = auth.uid());
 
-### Files summary
+-- Enable realtime for session_items
+ALTER PUBLICATION supabase_realtime ADD TABLE public.session_items;
 
-| File | Changes |
-|------|---------|
-| `src/App.tsx` | Add `/login` redirect to `/` |
-| `src/pages/LandingPage.tsx` | Remove lamp/chair/vase/planter/cushion, update subtitle & FAQ |
-| `extension/src/popup/Popup.tsx` | Remove non-You categories, remove tab bar, add Settings screen with display mode toggle |
-| `extension/src/content/ui.ts` | Shorten login pill text to "Log in" |
-| `extension/src/content/webAppSync.ts` | Rename VTO_ message types to CARTIFY_ |
-| `extension/src/background/index.ts` | Rename VTO_ message types to CARTIFY_ |
+-- Cleanup function: delete expired sessions and their items
+CREATE OR REPLACE FUNCTION public.cleanup_expired_sessions()
+RETURNS void LANGUAGE sql SECURITY DEFINER AS $$
+  DELETE FROM public.shopping_sessions WHERE expires_at < now();
+$$;
+```
+
+---
+
+### Extension UI: New Navigation Tabs
+
+Current nav: `Profile | Showroom`
+
+New nav: `Session | Showroom | Profile`
+
+**Session tab** shows:
+- Active shopping session with product list grouped by interaction type
+- Each item shows: image thumbnail, title, price, retailer
+- Action buttons per item: "Add to Cart" (Cartify cart), "Try On", "Remove"
+- Cart summary at bottom: item count + estimated total
+- Items with completed try-ons show a small badge linking to showroom
+
+**Showroom tab** stays the same but with daily reset behavior and lazy loading fix.
+
+**Profile tab** stays the same.
+
+**File:** `extension/src/shared/CartifyApp.tsx` — add `Screen = "session" | "showroom" | "profile" | "settings"`, default to `"session"`.
+
+---
+
+### Content Script: Track Interactions
+
+When a user clicks inline Cartify button on a listing page or clicks "Try On" on a product page, the background should also create/update a `session_item` in the current shopping session.
+
+**Changes to `extension/src/background/index.ts`:**
+- New helper `ensureSession()`: GET or CREATE a `shopping_session` for today
+- On `CARTIFY_TRYON_REQUEST`: after firing the try-on, also upsert a `session_item` with `interaction_type: 'tryon_requested'`
+- New message type `CARTIFY_ADD_TO_CART`: creates a `session_item` with `in_cart: true`
+- New message type `CARTIFY_SAVE_PRODUCT`: creates a `session_item` with `interaction_type: 'saved'`
+
+**Changes to `extension/src/content/index.ts` + `ui.ts`:**
+- On listing pages, add a second small button (cart icon) next to the Cartify try-on button on each product card
+- Clicking cart button extracts product data and sends `CARTIFY_ADD_TO_CART` to background
+
+---
+
+### Content Script: New Card Actions
+
+Each product card on listing pages gets two small overlaid buttons:
+1. **Try On** (existing hanger icon) — queues a try-on
+2. **Add to Cart** (small + icon) — adds to Cartify cart/session
+
+Both use the same deferred extraction pattern (extract on click only).
+
+**Files:** `extension/src/content/ui.ts`, `extension/src/content/index.ts`
+
+---
+
+### Web App Showroom Changes
+
+`src/pages/Showroom.tsx`: Add daily reset awareness — show "Today's try-ons" header, explain items reset daily. Add lazy loading to images.
+
+---
+
+### Files Summary
+
+| File | Change |
+|------|--------|
+| **DB Migration** | Create `shopping_sessions` + `session_items` tables with RLS |
+| `supabase/functions/cleanup-daily/index.ts` | **New** — delete expired sessions + old tryon_requests |
+| `extension/src/shared/CartifyApp.tsx` | Add Session tab, fix share fallback, lazy load images, 3-tab nav |
+| `extension/src/background/index.ts` | Add `ensureSession()`, `CARTIFY_ADD_TO_CART`, `CARTIFY_SAVE_PRODUCT` handlers |
+| `extension/src/content/ui.ts` | Add cart button injection alongside try-on button |
+| `extension/src/content/index.ts` | Wire up cart button clicks |
+| `extension/src/lib/types.ts` | Add new message types |
+| `src/pages/Showroom.tsx` | Fix share fallback, lazy load images, daily reset header |
+
+### Build Order
+
+1. DB migration (tables + RLS + cleanup function)
+2. Fix share bug + image lazy loading (quick wins)
+3. Background: session management + new message handlers
+4. Extension UI: Session tab + 3-tab nav
+5. Content script: cart button on listing cards
+6. Cleanup edge function
 
