@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { ExtensionLayout } from "@/components/ExtensionLayout";
-import { ShoppingCart } from "lucide-react";
+import { ShoppingCart, Download, Share2 } from "lucide-react";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 
