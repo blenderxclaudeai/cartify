@@ -29,12 +29,35 @@ function getSupabaseSession() {
   return null;
 }
 
+let sessionSent = false;
+
+function clearSupabaseSession() {
+  // Remove the Supabase auth key from localStorage so the web app's
+  // autoRefreshToken doesn't rotate the refresh token and invalidate
+  // the copy the extension just received.
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const key = localStorage.key(i);
+    if (!key) continue;
+    if (
+      (key.startsWith("sb-") && key.endsWith("-auth-token")) ||
+      (key.includes("supabase") && key.includes("auth"))
+    ) {
+      localStorage.removeItem(key);
+    }
+  }
+}
+
 function trySendSession() {
+  if (sessionSent) return;
+
   const session = getSupabaseSession();
   if (!session?.access_token) return;
 
   const user = session.user;
   if (!user) return;
+
+  // Mark sent immediately to prevent duplicate sends from polling/events
+  sessionSent = true;
 
   chrome.runtime.sendMessage(
     {
@@ -54,9 +77,20 @@ function trySendSession() {
       },
     },
     (response) => {
-      if (chrome.runtime.lastError) return;
+      if (chrome.runtime.lastError) {
+        // Reset so we can retry
+        sessionSent = false;
+        return;
+      }
       if (response?.ok) {
-        setTimeout(() => window.close(), 1500);
+        // Stop polling
+        clearInterval(poll);
+        // Clear the web app's copy of the session so its autoRefreshToken
+        // doesn't rotate the refresh token and invalidate the extension's copy
+        clearSupabaseSession();
+        setTimeout(() => window.close(), 1000);
+      } else {
+        sessionSent = false;
       }
     }
   );
@@ -67,10 +101,10 @@ trySendSession();
 
 // Watch for storage changes
 window.addEventListener("storage", (e) => {
-  if (e.key) trySendSession();
+  if (e.key && !sessionSent) trySendSession();
 });
 
-// Poll briefly
+// Poll briefly — stop after success or 15s
 let attempts = 0;
 const poll = setInterval(() => {
   attempts++;
