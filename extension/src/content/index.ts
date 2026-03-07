@@ -233,6 +233,10 @@ function evaluatePage() {
 
     const loggedIn = response?.loggedIn;
 
+    // Check coupons after auth is resolved (prevents racing with token refresh)
+    const domain = location.hostname.replace(/^www\./, "");
+    chrome.runtime.sendMessage({ type: "CARTIFY_CHECK_COUPONS", domain }, () => {});
+
     // Product page: primary experience (single "Try On" button + modal)
     if (productPage && !listingPage) {
       if (loggedIn) {
@@ -281,10 +285,7 @@ function evaluatePage() {
 }
 
 (() => {
-  // Check for coupons on page load
-  const domain = location.hostname.replace(/^www\./, "");
-  chrome.runtime.sendMessage({ type: "CARTIFY_CHECK_COUPONS", domain }, () => {});
-
+  // Coupon check moved inside evaluatePage() to avoid racing with auth state
   setTimeout(evaluatePage, 500);
 
   chrome.storage.onChanged.addListener((changes, area) => {

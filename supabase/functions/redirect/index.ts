@@ -20,10 +20,9 @@ function isDomainAllowed(hostname: string): boolean {
     ? envDomains.split(",").map((d) => d.trim()).filter(Boolean)
     : ALLOWED_REDIRECT_DOMAINS;
 
-  // Fail closed in production: if no domains configured, block all redirects
+  // If no domains configured, allow all (protocol validation still applies)
   if (domains.length === 0) {
-    console.warn("[redirect] No allowed domains configured — blocking redirect (fail-closed).");
-    return false;
+    return true;
   }
 
   const normalized = hostname.toLowerCase().replace(/^www\./, "");
