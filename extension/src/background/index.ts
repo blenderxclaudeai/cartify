@@ -76,7 +76,17 @@ async function getAuthState(): Promise<{ loggedIn: boolean; user: any | null }> 
   return { loggedIn: true, user: result.cartify_user || null };
 }
 
+// Deduplication lock: prevents concurrent refresh calls from rotating the token twice
+let refreshPromise: Promise<boolean> | null = null;
+
 async function refreshToken(): Promise<boolean> {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = doRefreshToken();
+  try { return await refreshPromise; }
+  finally { refreshPromise = null; }
+}
+
+async function doRefreshToken(): Promise<boolean> {
   const stored = await chrome.storage.local.get("cartify_refresh_token");
   const refreshTok = stored.cartify_refresh_token;
   if (!refreshTok) return false;
