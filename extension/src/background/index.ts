@@ -454,10 +454,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 async function handleTryOn(payload: any, background = false): Promise<any> {
   try {
     const stored = await chrome.storage.local.get(["cartify_auth_token", "cartify_recent_tryons"]);
-    const authToken = stored.cartify_auth_token;
+    let authToken = stored.cartify_auth_token;
 
     if (!authToken) {
       return { ok: false, error: "NOT_LOGGED_IN" };
+    }
+
+    // Proactively refresh expired token
+    if (isTokenExpired(authToken)) {
+      const refreshed = await refreshToken();
+      if (!refreshed) {
+        return { ok: false, error: "NOT_LOGGED_IN" };
+      }
+      const updated = await chrome.storage.local.get("cartify_auth_token");
+      authToken = updated.cartify_auth_token;
+      if (!authToken) return { ok: false, error: "NOT_LOGGED_IN" };
     }
 
     // Duplicate protection
@@ -472,20 +483,41 @@ async function handleTryOn(payload: any, background = false): Promise<any> {
       }
     }
 
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/tryon-request`, {
+    const tryOnBody = JSON.stringify({
+      pageUrl: payload.product_url,
+      imageUrl: payload.product_image,
+      title: payload.product_title,
+      category: payload.product_category || undefined,
+    });
+
+    let res = await fetch(`${SUPABASE_URL}/functions/v1/tryon-request`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         apikey: SUPABASE_ANON_KEY,
         Authorization: `Bearer ${authToken}`,
       },
-      body: JSON.stringify({
-        pageUrl: payload.product_url,
-        imageUrl: payload.product_image,
-        title: payload.product_title,
-        category: payload.product_category || undefined,
-      }),
+      body: tryOnBody,
     });
+
+    // Retry once on auth failure
+    if (res.status === 401 || res.status === 403) {
+      const refreshed = await refreshToken();
+      if (refreshed) {
+        const updated = await chrome.storage.local.get("cartify_auth_token");
+        if (updated.cartify_auth_token) {
+          res = await fetch(`${SUPABASE_URL}/functions/v1/tryon-request`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              apikey: SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${updated.cartify_auth_token}`,
+            },
+            body: tryOnBody,
+          });
+        }
+      }
+    }
 
     let data: any;
     try {
