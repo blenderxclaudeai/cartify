@@ -109,8 +109,6 @@ export function CartifyApp({ mode }: CartifyAppProps) {
   // Settings state
   const [displayMode, setDisplayMode] = useState<"popup" | "sidepanel">(mode);
 
-  // Pending product from content script
-  const [pendingProduct, setPendingProduct] = useState<PendingProduct | null>(null);
 
   // Coupon state
   const [activeCoupons, setActiveCoupons] = useState<any[]>([]);
