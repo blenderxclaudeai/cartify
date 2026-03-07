@@ -303,7 +303,7 @@ async function addSessionItem(
       if (inCart) updateBody.in_cart = true;
       if (tryonRequestId) updateBody.tryon_request_id = tryonRequestId;
 
-      const patchRes = await fetch(
+      const patchRes = await fetchWithAutoRefresh(
         `${SUPABASE_URL}/rest/v1/session_items?id=eq.${existing[0].id}`,
         {
           method: "PATCH",
