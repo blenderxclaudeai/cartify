@@ -611,29 +611,7 @@ export function CartifyApp({ mode }: CartifyAppProps) {
         </div>
       </div>
 
-      {/* ── Pending product banner ── */}
-      {pendingProduct && screen !== "settings" && (
-        <div className="shrink-0 mx-5 mb-2 rounded-xl border border-border bg-secondary/50 p-3">
-          <div className="flex items-center gap-3">
-            <img
-              src={pendingProduct.product_image}
-              alt={pendingProduct.product_title}
-              className="h-12 w-12 rounded-lg object-cover"
-            />
-            <div className="flex-1 min-w-0">
-              <p className="text-[12px] font-medium text-foreground truncate">
-                {pendingProduct.product_title}
-              </p>
-              <button
-                onClick={handleTryOnFromPanel}
-                className="mt-1 rounded-lg bg-foreground px-3 py-1 text-[11px] font-medium text-background transition-opacity hover:opacity-80"
-              >
-                Try On
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+
 
       {/* ── Fixed sub-header ── */}
       {screen === "session" ? (
