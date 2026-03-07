@@ -1,61 +1,112 @@
 
 
-## Fix List: Login, Product Focus, Extension Polish
+## Plan: Expanded Profile Categories, Session Total Widget, Coupon System
 
-### 1. Fix login flow — the /login 404 issue
+### 1. Expand Profile Photo Categories
 
-The screenshot shows `/login` returning a 404. The OAuth redirect URL in `extension/src/lib/auth.ts` uses `chrome.identity.getRedirectURL()` which should work for the extension flow. However, the `webAppSync.ts` content script still sends `VTO_SESSION_FROM_WEB` — this suggests the OAuth flow is opening a browser tab to the website instead of using `chrome.identity`. 
+The current `photo_category` enum covers: `full_body`, `face`, `hair`, `hands_wrist`, `hands`, `fingers`, `nails`, `ears`, plus home/pet/vehicle categories.
 
-**Root cause:** The `chrome.identity.launchWebAuthFlow` redirect URL (`chrome.identity.getRedirectURL()`) must be registered in the backend's OAuth redirect allowlist. If it's not, the provider may fall back to a web redirect. Also, the `redirect_to` parameter in the auth URL needs to match the extension's redirect URL pattern exactly.
+**Add new body part categories** via DB migration:
 
-**Fix:** Ensure the auth URL includes the correct `redirect_to` for chrome.identity. The current code looks correct — the issue is likely on the backend OAuth config side. We need to verify the redirect URL is whitelisted. But from the code side, the flow should work. The `/login` 404 happens because the old OAuth config redirects to `/login`. We should add `/login` as a catch-all redirect to `/` in `App.tsx` so users never see a 404 there.
+```sql
+ALTER TYPE photo_category ADD VALUE IF NOT EXISTS 'upper_body';
+ALTER TYPE photo_category ADD VALUE IF NOT EXISTS 'lower_body';
+ALTER TYPE photo_category ADD VALUE IF NOT EXISTS 'feet';
+ALTER TYPE photo_category ADD VALUE IF NOT EXISTS 'eyes';
+ALTER TYPE photo_category ADD VALUE IF NOT EXISTS 'lips';
+ALTER TYPE photo_category ADD VALUE IF NOT EXISTS 'brows';
+ALTER TYPE photo_category ADD VALUE IF NOT EXISTS 'arms';
+ALTER TYPE photo_category ADD VALUE IF NOT EXISTS 'back';
+ALTER TYPE photo_category ADD VALUE IF NOT EXISTS 'lower_back';
+ALTER TYPE photo_category ADD VALUE IF NOT EXISTS 'head';
+```
 
-**Files:** `src/App.tsx` — add a redirect from `/login` to `/`
+Note: `upper_body` may already exist in the enum from prior work — will use `IF NOT EXISTS`.
 
-### 2. Remove non-person categories from extension
+**Update both UIs** (`CartifyApp.tsx` CATEGORIES array and `Profile.tsx` CATEGORY_GROUPS):
+- Reorganize the "You" group into subgroups:
+  - **Body**: Full Body, Upper Body, Lower Body, Back, Lower Back, Arms
+  - **Head**: Head, Face, Eyes, Lips, Brows, Hair, Ears
+  - **Extremities**: Hands, Fingers, Nails, Feet
 
-Remove Home, Pets, Vehicle, Garden from `CATEGORY_GROUPS` in `Popup.tsx`. Keep only "You". Remove the tab bar entirely since there's only one group.
+- Remove Home, Pets, Vehicle, Garden groups from `Profile.tsx` (per the earlier product decision to focus on wearables only). The extension `CartifyApp.tsx` already only uses the flat CATEGORIES array — expand it to match.
 
-**File:** `extension/src/popup/Popup.tsx`
+**Update `tryon-request/index.ts`**:
+- Add new mappings in `CATEGORY_TO_PHOTO` (e.g., `shoes` → `feet`, `pants/leggings` → `lower_body`)
+- Add new detection patterns for categories like `eyes` (contact lenses, eye makeup), `lips` (lipstick), `brows` (brow products), `feet` (socks, shoes), `back` (backless dresses)
 
-### 3. Update "Try on anything" section — remove home/garden products
+### 2. Session Page: Total Cost Widget
 
-Remove: Lamps, Chairs, Vases, Planters, Cushions from both `tryOnCategories` and `tryOnCategories2`. Keep only wearable/person items. The remaining person-focused items with white backgrounds: Dress, Sneakers, Watch, Sunglasses, Handbag, Ring, Jacket, Hat, Boots, Necklace, Blazer, Bracelet, Jeans, Heels.
+Add a sticky bottom bar to the Session screen showing estimated total cost of all session items (not just cart items).
 
-Update the section subtitle to remove "home decor, garden" language.
+**Changes to `CartifyApp.tsx`**:
+- Compute `sessionTotal` from all `sessionItems` with parseable prices
+- Add a fixed bar above the bottom nav when on Session screen:
+  ```
+  ┌──────────────────────────────────┐
+  │  Total · 5 items      ~$243.50  │
+  └──────────────────────────────────┘
+  ```
+- Show individual `product_price` more prominently on each session item card (already partially there but small — make it more visible)
 
-Update the FAQ answer about "What kind of products can I try on?" to remove home decor mention.
+### 3. Coupon/Deal Discovery System
 
-**File:** `src/pages/LandingPage.tsx`
+Instead of showing a product banner when clicking a product, show a **coupon/deal widget** in the extension panel when the user is on a supported retailer.
 
-### 4. Fix content script login pill text
+**New DB table: `retailer_coupons`**
 
-Change "Log in to Cartify to try on" → "Log in" (shorter, cleaner).
+```sql
+CREATE TABLE public.retailer_coupons (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  domain text NOT NULL,
+  code text NOT NULL,
+  description text,
+  discount_type text DEFAULT 'percentage',
+  discount_value text,
+  min_purchase text,
+  expires_at timestamptz,
+  is_active boolean DEFAULT true,
+  created_at timestamptz DEFAULT now()
+);
 
-**File:** `extension/src/content/ui.ts`
+ALTER TABLE public.retailer_coupons ENABLE ROW LEVEL SECURITY;
 
-### 5. Add Settings screen to extension
+CREATE POLICY "Anyone can view active coupons"
+ON public.retailer_coupons FOR SELECT TO authenticated
+USING (is_active = true);
+```
 
-Add a third screen "settings" accessible from the header (gear icon next to Sign Out). Settings page includes:
-- **Display mode**: Radio/toggle between "Popup" and "Side Panel" — stores preference in `chrome.storage.local` as `cartify_display_mode`
-- Sign Out button moved here
+**Content script change**: When the user is on a retailer page, send a `CARTIFY_CHECK_COUPONS` message to background with the domain.
 
-**File:** `extension/src/popup/Popup.tsx`
+**Background handler**: Query `retailer_coupons` for the domain. If coupons exist, store them in `chrome.storage.local` under `cartify_active_coupons`.
 
-### 6. Remaining VTO references
+**Extension UI**: Show a small "Deals available" banner at the top of the Session tab when coupons exist for the current retailer. User can tap to reveal codes and copy them. This keeps users in the Cartify ecosystem and creates an affiliate engagement point.
 
-`webAppSync.ts` still uses `VTO_SESSION_FROM_WEB` message type and `background/index.ts` listens for it. Rename to `CARTIFY_SESSION_FROM_WEB` for consistency.
+**How this helps monetization**: Coupon codes can be sourced from affiliate networks (Awin, Impact). When a user applies a coupon through Cartify, the affiliate click is already tracked, earning commission on the purchase.
 
-**Files:** `extension/src/content/webAppSync.ts`, `extension/src/background/index.ts`
+### 4. Remove Pending Product Banner
 
-### Files summary
+The current "pending product" banner with "Try On" button becomes less relevant with the inline card buttons. Keep it for now but deprioritize — the coupon widget takes its UI slot.
 
-| File | Changes |
-|------|---------|
-| `src/App.tsx` | Add `/login` redirect to `/` |
-| `src/pages/LandingPage.tsx` | Remove lamp/chair/vase/planter/cushion, update subtitle & FAQ |
-| `extension/src/popup/Popup.tsx` | Remove non-You categories, remove tab bar, add Settings screen with display mode toggle |
-| `extension/src/content/ui.ts` | Shorten login pill text to "Log in" |
-| `extension/src/content/webAppSync.ts` | Rename VTO_ message types to CARTIFY_ |
-| `extension/src/background/index.ts` | Rename VTO_ message types to CARTIFY_ |
+---
+
+### Files Summary
+
+| File | Change |
+|------|--------|
+| **DB Migration** | Add ~10 new `photo_category` enum values + `retailer_coupons` table |
+| `extension/src/shared/CartifyApp.tsx` | Expand CATEGORIES, add session total bar, add coupon banner, reorganize profile grid |
+| `src/pages/Profile.tsx` | Expand CATEGORY_GROUPS to match new body parts, remove non-wearable groups |
+| `supabase/functions/tryon-request/index.ts` | Add new category→photo mappings + detection patterns |
+| `extension/src/lib/types.ts` | Add `CARTIFY_CHECK_COUPONS` message type |
+| `extension/src/background/index.ts` | Add coupon check handler |
+| `extension/src/content/index.ts` | Send coupon check on page load |
+
+### Build Order
+
+1. DB migration (new enum values + retailer_coupons table)
+2. Expand profile categories in both UIs
+3. Update tryon-request mappings
+4. Add session total widget
+5. Add coupon system (background + UI)
 
