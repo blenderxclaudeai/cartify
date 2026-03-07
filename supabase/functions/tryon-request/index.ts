@@ -7,7 +7,8 @@ function detectCategoryFromTitle(title: string, url: string): string | undefined
 
   const patterns: [RegExp, string][] = [
     [/\b(ring|rings|engagement ring|wedding band|ringar|förlovningsring)\b/, "ring"],
-    [/\b(bracelet|bangle|wristband|watch|watches|armband|klocka|montre|reloj|Uhr|Armband)\b/, "bracelet"],
+    [/\b(bracelet|bangle|wristband|armband)\b/, "bracelet"],
+    [/\b(watch|watches|klocka|montre|reloj|Uhr)\b/, "watch"],
     [/\b(necklace|pendant|chain|choker|halsband|collier|Halskette|Kette|collar)\b/, "necklace"],
     [/\b(earring|earrings|studs|hoops|örhängen|örhänge|boucles d'oreilles|Ohrringe|pendientes)\b/, "earring"],
     [/\b(nail polish|nail art|manicure|press.on nails|nagellack|naglar)\b/, "nails"],
