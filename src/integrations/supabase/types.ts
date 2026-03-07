@@ -122,6 +122,45 @@ export type Database = {
         }
         Relationships: []
       }
+      retailer_coupons: {
+        Row: {
+          code: string
+          created_at: string | null
+          description: string | null
+          discount_type: string | null
+          discount_value: string | null
+          domain: string
+          expires_at: string | null
+          id: string
+          is_active: boolean | null
+          min_purchase: string | null
+        }
+        Insert: {
+          code: string
+          created_at?: string | null
+          description?: string | null
+          discount_type?: string | null
+          discount_value?: string | null
+          domain: string
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          min_purchase?: string | null
+        }
+        Update: {
+          code?: string
+          created_at?: string | null
+          description?: string | null
+          discount_type?: string | null
+          discount_value?: string | null
+          domain?: string
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          min_purchase?: string | null
+        }
+        Relationships: []
+      }
       session_items: {
         Row: {
           created_at: string
@@ -349,6 +388,15 @@ export type Database = {
         | "patio"
         | "garden"
         | "balcony"
+        | "lower_body"
+        | "feet"
+        | "eyes"
+        | "lips"
+        | "brows"
+        | "arms"
+        | "back"
+        | "lower_back"
+        | "head"
       wallet_status: "pending" | "available" | "paid"
     }
     CompositeTypes: {
@@ -500,6 +548,15 @@ export const Constants = {
         "patio",
         "garden",
         "balcony",
+        "lower_body",
+        "feet",
+        "eyes",
+        "lips",
+        "brows",
+        "arms",
+        "back",
+        "lower_back",
+        "head",
       ],
       wallet_status: ["pending", "available", "paid"],
     },
