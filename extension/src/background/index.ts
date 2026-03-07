@@ -614,7 +614,7 @@ chrome.runtime.onStartup.addListener(async () => {
 });
 
 chrome.runtime.onInstalled.addListener(async () => {
-  chrome.storage.local.remove(["cartify_last_result"]);
+  chrome.storage.local.remove(["cartify_last_result", "cartify_auth_pending"]);
 
   const result = await chrome.storage.local.get("cartify_display_mode");
   const mode = result.cartify_display_mode || "sidepanel";
