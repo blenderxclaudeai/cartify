@@ -55,6 +55,11 @@ export interface SaveProductMessage {
   payload: ProductData;
 }
 
+export interface CheckCouponsMessage {
+  type: "CARTIFY_CHECK_COUPONS";
+  domain: string;
+}
+
 export type ExtensionMessage =
   | AuthLoginMessage
   | AuthLogoutMessage
@@ -63,4 +68,5 @@ export type ExtensionMessage =
   | ProductDetectedMessage
   | TryOnMessage
   | AddToCartMessage
-  | SaveProductMessage;
+  | SaveProductMessage
+  | CheckCouponsMessage;

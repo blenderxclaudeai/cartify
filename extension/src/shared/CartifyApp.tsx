@@ -51,16 +51,42 @@ interface PendingProduct {
   product_category?: string;
 }
 
-const CATEGORIES = [
-  { key: "full_body", label: "Full Body" },
-  { key: "upper_body", label: "Upper Body" },
-  { key: "face", label: "Face" },
-  { key: "hands", label: "Hands" },
-  { key: "fingers", label: "Fingers" },
-  { key: "nails", label: "Nails" },
-  { key: "hair", label: "Hair" },
-  { key: "ears", label: "Ears" },
+const CATEGORY_GROUPS = [
+  {
+    label: "Body",
+    categories: [
+      { key: "full_body", label: "Full Body" },
+      { key: "upper_body", label: "Upper Body" },
+      { key: "lower_body", label: "Lower Body" },
+      { key: "back", label: "Back" },
+      { key: "lower_back", label: "Lower Back" },
+      { key: "arms", label: "Arms" },
+    ],
+  },
+  {
+    label: "Head",
+    categories: [
+      { key: "head", label: "Head" },
+      { key: "face", label: "Face" },
+      { key: "eyes", label: "Eyes" },
+      { key: "lips", label: "Lips" },
+      { key: "brows", label: "Brows" },
+      { key: "hair", label: "Hair" },
+      { key: "ears", label: "Ears" },
+    ],
+  },
+  {
+    label: "Extremities",
+    categories: [
+      { key: "hands", label: "Hands" },
+      { key: "fingers", label: "Fingers" },
+      { key: "nails", label: "Nails" },
+      { key: "feet", label: "Feet" },
+    ],
+  },
 ];
+
+const ALL_CATEGORIES = CATEGORY_GROUPS.flatMap((g) => g.categories);
 
 interface CartifyAppProps {
   mode: "popup" | "sidepanel";
