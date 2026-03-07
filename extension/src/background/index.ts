@@ -248,7 +248,7 @@ async function ensureSession(): Promise<string | null> {
     ).catch(() => {});
 
     // Create new session
-    const createRes = await fetch(`${SUPABASE_URL}/rest/v1/shopping_sessions`, {
+    const createRes = await fetchWithAutoRefresh(`${SUPABASE_URL}/rest/v1/shopping_sessions`, {
       method: "POST",
       headers: { ...headers, Prefer: "return=representation" },
       body: JSON.stringify({ user_id: userId }),
