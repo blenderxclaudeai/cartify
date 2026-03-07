@@ -686,6 +686,46 @@ export function CartifyApp({ mode }: CartifyAppProps) {
         {screen === "session" ? (
           /* ── SESSION CONTENT ── */
           <div className="py-2">
+            {/* Coupon banner */}
+            {activeCoupons.length > 0 && (
+              <div className="mb-3 rounded-xl border border-border bg-secondary/40 p-3">
+                <button
+                  onClick={() => setCouponsExpanded(!couponsExpanded)}
+                  className="flex w-full items-center justify-between text-left"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-[14px]">🏷</span>
+                    <p className="text-[12px] font-medium text-foreground">
+                      {activeCoupons.length} deal{activeCoupons.length !== 1 ? "s" : ""} available
+                    </p>
+                  </div>
+                  <span className="text-[11px] text-muted-foreground">{couponsExpanded ? "▲" : "▼"}</span>
+                </button>
+                {couponsExpanded && (
+                  <div className="mt-2 space-y-2">
+                    {activeCoupons.map((c: any, idx: number) => (
+                      <div key={idx} className="flex items-center justify-between rounded-lg bg-background p-2.5 border border-border">
+                        <div>
+                          <p className="text-[11px] font-medium text-foreground">{c.description || `${c.discount_value || ""} off`}</p>
+                          {c.min_purchase && <p className="text-[9px] text-muted-foreground">Min. {c.min_purchase}</p>}
+                        </div>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(c.code).catch(() => {});
+                            setShareToast("Code copied!");
+                            setTimeout(() => setShareToast(null), 2000);
+                          }}
+                          className="rounded-lg bg-foreground px-3 py-1.5 text-[10px] font-bold text-background tracking-wider transition-opacity hover:opacity-80"
+                        >
+                          {c.code}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {sessionLoading ? (
               <div className="space-y-3">
                 {[1, 2, 3].map((i) => (
