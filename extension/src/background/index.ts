@@ -164,7 +164,7 @@ async function ensureSession(): Promise<string | null> {
   if (!userId) return null;
 
   try {
-    // Check for existing active session
+    // Check for existing active session that hasn't expired
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/shopping_sessions?user_id=eq.${userId}&is_active=eq.true&expires_at=gt.${new Date().toISOString()}&order=started_at.desc&limit=1`,
       { headers }
@@ -175,12 +175,28 @@ async function ensureSession(): Promise<string | null> {
       return sessions[0].id;
     }
 
+    // Deactivate any expired sessions still marked active
+    await fetch(
+      `${SUPABASE_URL}/rest/v1/shopping_sessions?user_id=eq.${userId}&is_active=eq.true&expires_at=lte.${new Date().toISOString()}`,
+      {
+        method: "PATCH",
+        headers: { ...headers, Prefer: "return=minimal" },
+        body: JSON.stringify({ is_active: false }),
+      }
+    ).catch(() => {});
+
     // Create new session
     const createRes = await fetch(`${SUPABASE_URL}/rest/v1/shopping_sessions`, {
       method: "POST",
       headers: { ...headers, Prefer: "return=representation" },
       body: JSON.stringify({ user_id: userId }),
     });
+
+    if (!createRes.ok) {
+      console.error("[Cartify] ensureSession create failed:", createRes.status, await createRes.text());
+      return null;
+    }
+
     const created = await createRes.json();
     if (Array.isArray(created) && created.length > 0) {
       return created[0].id;

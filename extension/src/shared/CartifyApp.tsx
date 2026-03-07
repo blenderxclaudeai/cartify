@@ -712,7 +712,7 @@ export function CartifyApp({ mode }: CartifyAppProps) {
                       </p>
                       {cartTotal > 0 && (
                         <p className="text-[13px] font-semibold text-foreground">
-                          ~${cartTotal.toFixed(2)}
+                          ~{currencySymbol}{cartTotal.toFixed(2)}
                         </p>
                       )}
                     </div>
