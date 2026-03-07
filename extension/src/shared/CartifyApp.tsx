@@ -126,9 +126,6 @@ export function CartifyApp({ mode }: CartifyAppProps) {
         if (result.cartify_display_mode) {
           setDisplayMode(result.cartify_display_mode);
         }
-        if (result.cartify_pending_product) {
-          setPendingProduct(result.cartify_pending_product);
-        }
         if (result.cartify_active_coupons) {
           setActiveCoupons(result.cartify_active_coupons);
         }
