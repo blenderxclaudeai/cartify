@@ -91,7 +91,11 @@ async function refreshToken(): Promise<boolean> {
       body: JSON.stringify({ refresh_token: refreshTok }),
     });
 
-    if (!res.ok) return false;
+    if (!res.ok) {
+      // Refresh token is dead — clear stale auth to force re-login
+      await chrome.storage.local.remove(["cartify_auth_token", "cartify_refresh_token", "cartify_user"]);
+      return false;
+    }
 
     const data = await res.json();
     if (!data.access_token) return false;
