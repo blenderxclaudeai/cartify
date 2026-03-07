@@ -118,6 +118,10 @@ export function CartifyApp({ mode }: CartifyAppProps) {
   // Pending product from content script
   const [pendingProduct, setPendingProduct] = useState<PendingProduct | null>(null);
 
+  // Coupon state
+  const [activeCoupons, setActiveCoupons] = useState<any[]>([]);
+  const [couponsExpanded, setCouponsExpanded] = useState(false);
+
   // Initialize auth + pending product
   useEffect(() => {
     chrome.storage.local.get(
