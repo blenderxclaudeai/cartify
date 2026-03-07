@@ -227,7 +227,7 @@ async function ensureSession(): Promise<string | null> {
 
   try {
     // Check for existing active session that hasn't expired
-    const res = await fetch(
+    const res = await fetchWithAutoRefresh(
       `${SUPABASE_URL}/rest/v1/shopping_sessions?user_id=eq.${userId}&is_active=eq.true&expires_at=gt.${new Date().toISOString()}&order=started_at.desc&limit=1`,
       { headers }
     );
