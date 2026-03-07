@@ -423,7 +423,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       const headers = await getAuthHeaders();
       if (!headers) { sendResponse({ ok: false }); return; }
       try {
-        const res = await fetch(
+        const res = await fetchWithAutoRefresh(
           `${SUPABASE_URL}/rest/v1/retailer_coupons?domain=eq.${encodeURIComponent(msg.domain)}&is_active=eq.true&select=code,description,discount_type,discount_value,min_purchase`,
           { headers }
         );
