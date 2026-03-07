@@ -8,53 +8,38 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 const CATEGORY_GROUPS = [
   {
-    key: "you",
-    label: "You",
+    key: "body",
+    label: "Body",
     categories: [
       { key: "full_body", label: "Full Body" },
       { key: "upper_body", label: "Upper Body" },
+      { key: "lower_body", label: "Lower Body" },
+      { key: "back", label: "Back" },
+      { key: "lower_back", label: "Lower Back" },
+      { key: "arms", label: "Arms" },
+    ],
+  },
+  {
+    key: "head",
+    label: "Head",
+    categories: [
+      { key: "head", label: "Head" },
       { key: "face", label: "Face" },
-      { key: "hands", label: "Hands" },
-      { key: "fingers", label: "Fingers" },
-      { key: "nails", label: "Nails" },
+      { key: "eyes", label: "Eyes" },
+      { key: "lips", label: "Lips" },
+      { key: "brows", label: "Brows" },
       { key: "hair", label: "Hair" },
       { key: "ears", label: "Ears" },
     ],
   },
   {
-    key: "home",
-    label: "Home",
+    key: "extremities",
+    label: "Extremities",
     categories: [
-      { key: "living_room", label: "Living Room" },
-      { key: "kitchen", label: "Kitchen" },
-      { key: "bedroom", label: "Bedroom" },
-      { key: "bathroom", label: "Bathroom" },
-      { key: "office", label: "Office" },
-    ],
-  },
-  {
-    key: "pets",
-    label: "Pets",
-    categories: [
-      { key: "dog", label: "Dog" },
-      { key: "cat", label: "Cat" },
-    ],
-  },
-  {
-    key: "vehicle",
-    label: "Vehicle",
-    categories: [
-      { key: "car_interior", label: "Car Interior" },
-      { key: "car_exterior", label: "Car Exterior" },
-    ],
-  },
-  {
-    key: "garden",
-    label: "Garden",
-    categories: [
-      { key: "patio", label: "Patio" },
-      { key: "garden", label: "Garden" },
-      { key: "balcony", label: "Balcony" },
+      { key: "hands", label: "Hands" },
+      { key: "fingers", label: "Fingers" },
+      { key: "nails", label: "Nails" },
+      { key: "feet", label: "Feet" },
     ],
   },
 ] as const;
@@ -147,7 +132,7 @@ export default function Profile() {
         {/* Tabbed photo grid */}
         <div className="flex-1 overflow-hidden py-4">
           <p className="text-center text-[12px] text-muted-foreground">Your photos for virtual try-on</p>
-          <Tabs defaultValue="you" className="mt-3">
+          <Tabs defaultValue="body" className="mt-3">
             <TabsList className="w-full justify-center">
               {CATEGORY_GROUPS.map(group => (
                 <TabsTrigger key={group.key} value={group.key} className="text-[12px]">

@@ -51,16 +51,42 @@ interface PendingProduct {
   product_category?: string;
 }
 
-const CATEGORIES = [
-  { key: "full_body", label: "Full Body" },
-  { key: "upper_body", label: "Upper Body" },
-  { key: "face", label: "Face" },
-  { key: "hands", label: "Hands" },
-  { key: "fingers", label: "Fingers" },
-  { key: "nails", label: "Nails" },
-  { key: "hair", label: "Hair" },
-  { key: "ears", label: "Ears" },
+const CATEGORY_GROUPS = [
+  {
+    label: "Body",
+    categories: [
+      { key: "full_body", label: "Full Body" },
+      { key: "upper_body", label: "Upper Body" },
+      { key: "lower_body", label: "Lower Body" },
+      { key: "back", label: "Back" },
+      { key: "lower_back", label: "Lower Back" },
+      { key: "arms", label: "Arms" },
+    ],
+  },
+  {
+    label: "Head",
+    categories: [
+      { key: "head", label: "Head" },
+      { key: "face", label: "Face" },
+      { key: "eyes", label: "Eyes" },
+      { key: "lips", label: "Lips" },
+      { key: "brows", label: "Brows" },
+      { key: "hair", label: "Hair" },
+      { key: "ears", label: "Ears" },
+    ],
+  },
+  {
+    label: "Extremities",
+    categories: [
+      { key: "hands", label: "Hands" },
+      { key: "fingers", label: "Fingers" },
+      { key: "nails", label: "Nails" },
+      { key: "feet", label: "Feet" },
+    ],
+  },
 ];
+
+const ALL_CATEGORIES = CATEGORY_GROUPS.flatMap((g) => g.categories);
 
 interface CartifyAppProps {
   mode: "popup" | "sidepanel";
@@ -92,10 +118,14 @@ export function CartifyApp({ mode }: CartifyAppProps) {
   // Pending product from content script
   const [pendingProduct, setPendingProduct] = useState<PendingProduct | null>(null);
 
+  // Coupon state
+  const [activeCoupons, setActiveCoupons] = useState<any[]>([]);
+  const [couponsExpanded, setCouponsExpanded] = useState(false);
+
   // Initialize auth + pending product
   useEffect(() => {
     chrome.storage.local.get(
-      ["cartify_auth_token", "cartify_user", "cartify_display_mode", "cartify_pending_product"],
+      ["cartify_auth_token", "cartify_user", "cartify_display_mode", "cartify_pending_product", "cartify_active_coupons"],
       (result) => {
         if (result.cartify_auth_token && result.cartify_user) {
           setStoredUser(result.cartify_user);
@@ -106,6 +136,9 @@ export function CartifyApp({ mode }: CartifyAppProps) {
         }
         if (result.cartify_pending_product) {
           setPendingProduct(result.cartify_pending_product);
+        }
+        if (result.cartify_active_coupons) {
+          setActiveCoupons(result.cartify_active_coupons);
         }
         setLoading(false);
       }
@@ -128,6 +161,11 @@ export function CartifyApp({ mode }: CartifyAppProps) {
       }
       if (changes.cartify_pending_product?.newValue) {
         setPendingProduct(changes.cartify_pending_product.newValue);
+      }
+      if (changes.cartify_active_coupons?.newValue) {
+        setActiveCoupons(changes.cartify_active_coupons.newValue);
+      } else if (changes.cartify_active_coupons && !changes.cartify_active_coupons.newValue) {
+        setActiveCoupons([]);
       }
     };
     chrome.storage.onChanged.addListener(listener);
@@ -542,11 +580,24 @@ export function CartifyApp({ mode }: CartifyAppProps) {
   const pendingResults = results.filter((r) => !r.result_image_url);
 
   const cartItems = sessionItems.filter((i) => i.in_cart);
+  const sessionTotal = sessionItems.reduce((sum, i) => {
+    if (!i.product_price) return sum;
+    const num = parseFloat(i.product_price.replace(/[^0-9.]/g, ""));
+    return isNaN(num) ? sum : sum + num;
+  }, 0);
   const cartTotal = cartItems.reduce((sum, i) => {
     if (!i.product_price) return sum;
     const num = parseFloat(i.product_price.replace(/[^0-9.]/g, ""));
     return isNaN(num) ? sum : sum + num;
   }, 0);
+
+  // Detect currency symbol from first priced item
+  const currencySymbol = (() => {
+    const priced = sessionItems.find((i) => i.product_price);
+    if (!priced?.product_price) return "$";
+    const match = priced.product_price.match(/[^\d\s.,]/);
+    return match ? match[0] : "$";
+  })();
 
   const getAffiliateUrl = (r: TryonResult) =>
     `${SUPABASE_URL}/functions/v1/redirect?target=${encodeURIComponent(r.page_url)}&retailerDomain=${r.retailer_domain ?? ""}`;
@@ -635,6 +686,46 @@ export function CartifyApp({ mode }: CartifyAppProps) {
         {screen === "session" ? (
           /* ── SESSION CONTENT ── */
           <div className="py-2">
+            {/* Coupon banner */}
+            {activeCoupons.length > 0 && (
+              <div className="mb-3 rounded-xl border border-border bg-secondary/40 p-3">
+                <button
+                  onClick={() => setCouponsExpanded(!couponsExpanded)}
+                  className="flex w-full items-center justify-between text-left"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-[14px]">🏷</span>
+                    <p className="text-[12px] font-medium text-foreground">
+                      {activeCoupons.length} deal{activeCoupons.length !== 1 ? "s" : ""} available
+                    </p>
+                  </div>
+                  <span className="text-[11px] text-muted-foreground">{couponsExpanded ? "▲" : "▼"}</span>
+                </button>
+                {couponsExpanded && (
+                  <div className="mt-2 space-y-2">
+                    {activeCoupons.map((c: any, idx: number) => (
+                      <div key={idx} className="flex items-center justify-between rounded-lg bg-background p-2.5 border border-border">
+                        <div>
+                          <p className="text-[11px] font-medium text-foreground">{c.description || `${c.discount_value || ""} off`}</p>
+                          {c.min_purchase && <p className="text-[9px] text-muted-foreground">Min. {c.min_purchase}</p>}
+                        </div>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(c.code).catch(() => {});
+                            setShareToast("Code copied!");
+                            setTimeout(() => setShareToast(null), 2000);
+                          }}
+                          className="rounded-lg bg-foreground px-3 py-1.5 text-[10px] font-bold text-background tracking-wider transition-opacity hover:opacity-80"
+                        >
+                          {c.code}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {sessionLoading ? (
               <div className="space-y-3">
                 {[1, 2, 3].map((i) => (
@@ -754,66 +845,73 @@ export function CartifyApp({ mode }: CartifyAppProps) {
             )}
           </div>
         ) : screen === "profile" ? (
-          <div className="grid grid-cols-2 gap-3 pt-1">
-            {CATEGORIES.map((cat) => {
-              const photo = photos.find((p) => p.category === cat.key);
-              return (
-                <div key={cat.key} className="group relative">
-                  {photosLoading ? (
-                    <div className="aspect-square rounded-xl bg-secondary animate-pulse" />
-                  ) : photo?.signedUrl ? (
-                    <div className="relative">
-                      <img
-                        src={photo.signedUrl}
-                        alt={cat.label}
-                        className="aspect-square w-full rounded-xl object-cover"
-                      />
-                      <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-xl bg-foreground/0 opacity-0 transition-all group-hover:bg-foreground/40 group-hover:opacity-100">
-                        <label className="cursor-pointer rounded-lg bg-background/90 px-3 py-1.5 text-[11px] font-medium text-foreground transition-opacity hover:opacity-80">
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={(e) =>
-                              e.target.files?.[0] && handleUpload(cat.key, e.target.files[0])
-                            }
-                          />
-                          Replace
-                        </label>
-                        <button
-                          onClick={() => handleDeletePhoto(photo)}
-                          className="rounded-lg px-3 py-1.5 text-[11px] font-medium text-background transition-opacity hover:opacity-80 bg-destructive"
-                        >
-                          Delete
-                        </button>
+          <div className="space-y-5 pt-1">
+            {CATEGORY_GROUPS.map((group) => (
+              <div key={group.label}>
+                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{group.label}</p>
+                <div className="grid grid-cols-2 gap-3">
+                  {group.categories.map((cat) => {
+                    const photo = photos.find((p) => p.category === cat.key);
+                    return (
+                      <div key={cat.key} className="group relative">
+                        {photosLoading ? (
+                          <div className="aspect-square rounded-xl bg-secondary animate-pulse" />
+                        ) : photo?.signedUrl ? (
+                          <div className="relative">
+                            <img
+                              src={photo.signedUrl}
+                              alt={cat.label}
+                              className="aspect-square w-full rounded-xl object-cover"
+                            />
+                            <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-xl bg-foreground/0 opacity-0 transition-all group-hover:bg-foreground/40 group-hover:opacity-100">
+                              <label className="cursor-pointer rounded-lg bg-background/90 px-3 py-1.5 text-[11px] font-medium text-foreground transition-opacity hover:opacity-80">
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={(e) =>
+                                    e.target.files?.[0] && handleUpload(cat.key, e.target.files[0])
+                                  }
+                                />
+                                Replace
+                              </label>
+                              <button
+                                onClick={() => handleDeletePhoto(photo)}
+                                className="rounded-lg px-3 py-1.5 text-[11px] font-medium text-background transition-opacity hover:opacity-80 bg-destructive"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                            <p className="mt-1.5 text-center text-[11px] font-medium text-muted-foreground">
+                              {cat.label}
+                            </p>
+                          </div>
+                        ) : (
+                          <label className="flex aspect-square cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-border bg-background text-muted-foreground transition-colors hover:bg-secondary/50">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) =>
+                                e.target.files?.[0] && handleUpload(cat.key, e.target.files[0])
+                              }
+                            />
+                            {uploading === cat.key ? (
+                              <span className="text-[12px]">Uploading…</span>
+                            ) : (
+                              <>
+                                <span className="text-[18px] leading-none">+</span>
+                                <span className="mt-1 text-[11px] font-medium">{cat.label}</span>
+                              </>
+                            )}
+                          </label>
+                        )}
                       </div>
-                      <p className="mt-1.5 text-center text-[11px] font-medium text-muted-foreground">
-                        {cat.label}
-                      </p>
-                    </div>
-                  ) : (
-                    <label className="flex aspect-square cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-border bg-background text-muted-foreground transition-colors hover:bg-secondary/50">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) =>
-                          e.target.files?.[0] && handleUpload(cat.key, e.target.files[0])
-                        }
-                      />
-                      {uploading === cat.key ? (
-                        <span className="text-[12px]">Uploading…</span>
-                      ) : (
-                        <>
-                          <span className="text-[18px] leading-none">+</span>
-                          <span className="mt-1 text-[11px] font-medium">{cat.label}</span>
-                        </>
-                      )}
-                    </label>
-                  )}
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         ) : screen === "showroom" ? (
           /* ── SHOWROOM CONTENT ── */
@@ -967,6 +1065,20 @@ export function CartifyApp({ mode }: CartifyAppProps) {
           </div>
         )}
       </div>
+
+      {/* ── Session total bar ── */}
+      {screen === "session" && sessionItems.length > 0 && sessionTotal > 0 && (
+        <div className="shrink-0 border-t bg-secondary/30 px-5 py-2.5">
+          <div className="flex items-center justify-between">
+            <p className="text-[12px] text-muted-foreground">
+              Total · {sessionItems.length} item{sessionItems.length !== 1 ? "s" : ""}
+            </p>
+            <p className="text-[14px] font-semibold text-foreground">
+              ~{currencySymbol}{sessionTotal.toFixed(2)}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── Fixed bottom nav ── */}
       <div className="shrink-0 border-t">
