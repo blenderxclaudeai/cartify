@@ -1,61 +1,83 @@
 
 
-## Fix List: Login, Product Focus, Extension Polish
+## Root Cause Analysis
 
-### 1. Fix login flow — the /login 404 issue
+The extension instability stems from **one critical bug** that cascades into every symptom you're seeing, plus two secondary issues:
 
-The screenshot shows `/login` returning a 404. The OAuth redirect URL in `extension/src/lib/auth.ts` uses `chrome.identity.getRedirectURL()` which should work for the extension flow. However, the `webAppSync.ts` content script still sends `VTO_SESSION_FROM_WEB` — this suggests the OAuth flow is opening a browser tab to the website instead of using `chrome.identity`. 
+### Primary Bug: Token Refresh Race Condition
 
-**Root cause:** The `chrome.identity.launchWebAuthFlow` redirect URL (`chrome.identity.getRedirectURL()`) must be registered in the backend's OAuth redirect allowlist. If it's not, the provider may fall back to a web redirect. Also, the `redirect_to` parameter in the auth URL needs to match the extension's redirect URL pattern exactly.
+`refreshToken()` has no concurrency guard. Every action (cart click, try-on, page navigation, coupon check) triggers API calls that independently detect an expired token and call `refreshToken()` simultaneously. Supabase **rotates** the refresh token on each use — the first call succeeds and stores a new token, the second call uses the now-invalid old token, gets a 400, and **wipes all auth data** (lines 96-98). This single bug causes:
 
-**Fix:** Ensure the auth URL includes the correct `redirect_to` for chrome.identity. The current code looks correct — the issue is likely on the backend OAuth config side. We need to verify the redirect URL is whitelisted. But from the code side, the flow should work. The `/login` 404 happens because the old OAuth config redirects to `/login`. We should add `/login` as a catch-all redirect to `/` in `App.tsx` so users never see a 404 there.
+- Logged out when clicking "Add to Cart" (cart triggers `getAuthHeaders()` + `ensureSession()` + `fetchWithAutoRefresh()` — up to 3 concurrent refreshes)
+- Logged out when navigating pages (`evaluatePage()` → `AUTH_GET_USER` → `getAuthState()` triggers refresh, while the coupon check on line 286 also fires)
+- Try-on says "Please log in" (same race — auth wiped mid-request)
+- Login resets (popup detects cleared `cartify_auth_token` via storage listener)
 
-**Files:** `src/App.tsx` — add a redirect from `/login` to `/`
+### Secondary Issue: Coupon Check Triggers Unnecessary Auth
 
-### 2. Remove non-person categories from extension
+The content script fires `CARTIFY_CHECK_COUPONS` on **every page load** (line 286). This calls `getAuthHeaders()` which may trigger a token refresh — adding another concurrent refresh call to the race. Coupons are public data (`is_active = true` policy allows any authenticated user) but the check still requires auth headers.
 
-Remove Home, Pets, Vehicle, Garden from `CATEGORY_GROUPS` in `Popup.tsx`. Keep only "You". Remove the tab bar entirely since there's only one group.
+### Tertiary Issue: Redirect Allowlist Empty
 
-**File:** `extension/src/popup/Popup.tsx`
+`ALLOWED_REDIRECT_DOMAINS` is an empty array (line 10 of redirect function). The function fails closed — all redirects return 403. This breaks any affiliate/cart redirect flow.
 
-### 3. Update "Try on anything" section — remove home/garden products
+### What the Cleanup System Does (and Doesn't Do)
 
-Remove: Lamps, Chairs, Vases, Planters, Cushions from both `tryOnCategories` and `tryOnCategories2`. Keep only wearable/person items. The remaining person-focused items with white backgrounds: Dress, Sneakers, Watch, Sunglasses, Handbag, Ring, Jacket, Hat, Boots, Necklace, Blazer, Bracelet, Jeans, Heels.
+The `cleanup-daily` edge function only calls two DB functions: `cleanup_expired_sessions` (deletes expired `shopping_sessions` rows) and `cleanup_old_tryons` (deletes `tryon_requests` older than 24h). These are **server-side DB operations** and do NOT touch `chrome.storage.local`. The cleanup system is **not** directly causing logouts. The timing correlation is coincidental — the coupon feature added with it introduced the extra concurrent `getAuthHeaders()` call that exacerbated the race condition.
 
-Update the section subtitle to remove "home decor, garden" language.
+---
 
-Update the FAQ answer about "What kind of products can I try on?" to remove home decor mention.
+## Fix Plan
 
-**File:** `src/pages/LandingPage.tsx`
+### 1. Add Refresh Token Deduplication Lock (fixes ALL logout issues)
 
-### 4. Fix content script login pill text
+**File: `extension/src/background/index.ts`**
 
-Change "Log in to Cartify to try on" → "Log in" (shorter, cleaner).
+Rename current `refreshToken()` to `doRefreshToken()`. Create a new `refreshToken()` wrapper with a module-level promise lock:
 
-**File:** `extension/src/content/ui.ts`
+```ts
+let refreshPromise: Promise<boolean> | null = null;
 
-### 5. Add Settings screen to extension
+async function refreshToken(): Promise<boolean> {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = doRefreshToken();
+  try { return await refreshPromise; }
+  finally { refreshPromise = null; }
+}
+```
 
-Add a third screen "settings" accessible from the header (gear icon next to Sign Out). Settings page includes:
-- **Display mode**: Radio/toggle between "Popup" and "Side Panel" — stores preference in `chrome.storage.local` as `cartify_display_mode`
-- Sign Out button moved here
+This ensures all concurrent callers wait for the same refresh operation instead of firing parallel rotations. One change, fixes every logout symptom.
 
-**File:** `extension/src/popup/Popup.tsx`
+### 2. Make Coupon Check Non-Auth-Dependent
 
-### 6. Remaining VTO references
+**File: `extension/src/content/index.ts`**
 
-`webAppSync.ts` still uses `VTO_SESSION_FROM_WEB` message type and `background/index.ts` listens for it. Rename to `CARTIFY_SESSION_FROM_WEB` for consistency.
+Move the coupon check to fire **after** `evaluatePage()` completes (inside the auth callback), not independently on page load. This eliminates one source of concurrent refresh calls and prevents coupon checks from racing with auth state checks.
 
-**Files:** `extension/src/content/webAppSync.ts`, `extension/src/background/index.ts`
+### 3. Configure Redirect Allowlist
 
-### Files summary
+**File: `supabase/functions/redirect/index.ts`**
 
-| File | Changes |
-|------|---------|
-| `src/App.tsx` | Add `/login` redirect to `/` |
-| `src/pages/LandingPage.tsx` | Remove lamp/chair/vase/planter/cushion, update subtitle & FAQ |
-| `extension/src/popup/Popup.tsx` | Remove non-You categories, remove tab bar, add Settings screen with display mode toggle |
-| `extension/src/content/ui.ts` | Shorten login pill text to "Log in" |
-| `extension/src/content/webAppSync.ts` | Rename VTO_ message types to CARTIFY_ |
-| `extension/src/background/index.ts` | Rename VTO_ message types to CARTIFY_ |
+The empty `ALLOWED_REDIRECT_DOMAINS` array blocks all redirects. Two options:
+- Add common retailer domains to the hardcoded list, OR
+- Set the `ALLOWED_REDIRECT_DOMAINS` environment secret with comma-separated domains
+
+Since merchant domains vary, the best approach is to **remove the fail-closed empty check** and instead use a permissive default that still validates protocol (http/https only). Or populate the env variable with initial domains.
+
+### 4. Minor Stability Improvements
+
+**File: `extension/src/background/index.ts`**
+
+- In `onInstalled`, also clear stale `cartify_auth_pending` flag (prevents stuck loading state after extension update)
+- In the alarm handler for `TOKEN_REFRESH_ALARM`, the refresh already uses the deduplication lock from fix #1, so no additional change needed
+
+### Summary of Files
+
+| File | Change |
+|------|--------|
+| `extension/src/background/index.ts` | Add `refreshPromise` deduplication lock around `refreshToken()`; clear `cartify_auth_pending` in `onInstalled` |
+| `extension/src/content/index.ts` | Move coupon check inside `evaluatePage()` auth callback instead of firing independently |
+| `supabase/functions/redirect/index.ts` | Configure or remove the empty domain allowlist so redirects work |
+
+No database changes needed. No changes to `CartifyApp.tsx`, `webAppSync.ts`, or `auth.ts` — those are fine as-is.
 
