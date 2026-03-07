@@ -241,7 +241,7 @@ async function addSessionItem(
       if (inCart) updateBody.in_cart = true;
       if (tryonRequestId) updateBody.tryon_request_id = tryonRequestId;
 
-      await fetch(
+      const patchRes = await fetch(
         `${SUPABASE_URL}/rest/v1/session_items?id=eq.${existing[0].id}`,
         {
           method: "PATCH",
@@ -249,6 +249,9 @@ async function addSessionItem(
           body: JSON.stringify(updateBody),
         }
       );
+      if (!patchRes.ok) {
+        console.error("[Cartify] addSessionItem PATCH failed:", patchRes.status, await patchRes.text());
+      }
     } else {
       // Insert new item
       const domain = payload.product_url
