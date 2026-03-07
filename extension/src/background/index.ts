@@ -91,7 +91,11 @@ async function refreshToken(): Promise<boolean> {
       body: JSON.stringify({ refresh_token: refreshTok }),
     });
 
-    if (!res.ok) return false;
+    if (!res.ok) {
+      // Refresh token is dead — clear stale auth to force re-login
+      await chrome.storage.local.remove(["cartify_auth_token", "cartify_refresh_token", "cartify_user"]);
+      return false;
+    }
 
     const data = await res.json();
     if (!data.access_token) return false;
@@ -275,16 +279,16 @@ async function addSessionItem(
   interactionType: string,
   inCart: boolean = false,
   tryonRequestId?: string
-): Promise<void> {
+): Promise<boolean> {
   const headers = await getAuthHeaders();
-  if (!headers) return;
+  if (!headers) return false;
 
   const stored = await chrome.storage.local.get("cartify_user");
   const userId = stored.cartify_user?.id;
-  if (!userId) return;
+  if (!userId) return false;
 
   const sessionId = await ensureSession();
-  if (!sessionId) return;
+  if (!sessionId) return false;
 
   try {
     // Check if item already exists in this session
@@ -313,7 +317,9 @@ async function addSessionItem(
       );
       if (!patchRes.ok) {
         console.error("[Cartify] addSessionItem PATCH failed:", patchRes.status, await patchRes.text());
+        return false;
       }
+      return true;
     } else {
       // Insert new item
       const domain = payload.product_url
@@ -338,10 +344,13 @@ async function addSessionItem(
       });
       if (!postRes.ok) {
         console.error("[Cartify] addSessionItem POST failed:", postRes.status, await postRes.text());
+        return false;
       }
     }
+    return true;
   } catch (e) {
     console.error("[Cartify] addSessionItem error:", e);
+    return false;
   }
 }
 
@@ -405,15 +414,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === "CARTIFY_ADD_TO_CART") {
-    addSessionItem(msg.payload, "cart", true).then(() => {
-      sendResponse({ ok: true });
+    addSessionItem(msg.payload, "cart", true).then((ok) => {
+      sendResponse({ ok });
     });
     return true;
   }
 
   if (msg.type === "CARTIFY_SAVE_PRODUCT") {
-    addSessionItem(msg.payload, "saved").then(() => {
-      sendResponse({ ok: true });
+    addSessionItem(msg.payload, "saved").then((ok) => {
+      sendResponse({ ok });
     });
     return true;
   }
