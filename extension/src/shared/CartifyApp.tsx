@@ -290,10 +290,9 @@ export function CartifyApp({ mode }: CartifyAppProps) {
 
   const handleOAuth = async (provider: "google" | "apple") => {
     setAuthLoading(true);
-    const result = await signInWithOAuth(provider);
-    if (!result.ok) {
-      setAuthLoading(false);
-    }
+    // Fire-and-forget: don't await the full auth flow
+    // Auth completion is detected via the storage.onChanged listener above
+    signInWithOAuth(provider);
   };
 
   const handleSignOut = async () => {
