@@ -580,11 +580,24 @@ export function CartifyApp({ mode }: CartifyAppProps) {
   const pendingResults = results.filter((r) => !r.result_image_url);
 
   const cartItems = sessionItems.filter((i) => i.in_cart);
+  const sessionTotal = sessionItems.reduce((sum, i) => {
+    if (!i.product_price) return sum;
+    const num = parseFloat(i.product_price.replace(/[^0-9.]/g, ""));
+    return isNaN(num) ? sum : sum + num;
+  }, 0);
   const cartTotal = cartItems.reduce((sum, i) => {
     if (!i.product_price) return sum;
     const num = parseFloat(i.product_price.replace(/[^0-9.]/g, ""));
     return isNaN(num) ? sum : sum + num;
   }, 0);
+
+  // Detect currency symbol from first priced item
+  const currencySymbol = (() => {
+    const priced = sessionItems.find((i) => i.product_price);
+    if (!priced?.product_price) return "$";
+    const match = priced.product_price.match(/[^\d\s.,]/);
+    return match ? match[0] : "$";
+  })();
 
   const getAffiliateUrl = (r: TryonResult) =>
     `${SUPABASE_URL}/functions/v1/redirect?target=${encodeURIComponent(r.page_url)}&retailerDomain=${r.retailer_domain ?? ""}`;
