@@ -684,7 +684,7 @@ export function CartifyApp({ mode }: CartifyAppProps) {
             {sessionLoading ? (
               <div className="grid grid-cols-2 gap-3">
                 {[1, 2, 3, 4].map((i) => (
-                  <div key={i} className="aspect-square rounded-xl bg-secondary animate-pulse" />
+                  <div key={i} className="aspect-[3/4] rounded-xl bg-secondary animate-pulse" />
                 ))}
               </div>
             ) : sessionItems.length === 0 ? (
