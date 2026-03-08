@@ -706,7 +706,7 @@ export function CartifyApp({ mode }: CartifyAppProps) {
                       <img
                         src={item.product_image}
                         alt={item.product_title || "Product"}
-                        className="aspect-square w-full rounded-xl object-cover bg-secondary"
+                        className="aspect-[3/4] w-full rounded-xl object-cover bg-secondary"
                         loading="lazy"
                       />
                     ) : (
