@@ -731,7 +731,7 @@ export function CartifyApp({ mode }: CartifyAppProps) {
                     )}
 
                     {/* Hover overlay */}
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-xl bg-foreground/0 opacity-0 transition-all duration-200 group-hover:bg-foreground/50 group-hover:opacity-100">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-xl bg-foreground/0 opacity-0 transition-all duration-200 group-hover:bg-foreground/50 group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => handleTryOnSessionItem(item)}
                         className="w-[80%] rounded-lg bg-background/95 py-2 text-[11px] font-medium text-foreground shadow-sm transition-opacity hover:opacity-90"
@@ -751,6 +751,13 @@ export function CartifyApp({ mode }: CartifyAppProps) {
                         Remove
                       </button>
                     </div>
+
+                    {/* Cart indicator */}
+                    {item.in_cart && (
+                      <div className="absolute top-2 right-2 h-5 w-5 rounded-full bg-foreground flex items-center justify-center shadow-sm">
+                        <span className="text-[9px] text-background">✓</span>
+                      </div>
+                    )}
 
 
                     {/* Product info */}
