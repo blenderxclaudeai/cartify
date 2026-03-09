@@ -635,6 +635,47 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
+// ── Cart badge on extension icon ──
+
+async function updateCartBadge() {
+  try {
+    const stored = await chrome.storage.local.get(["cartify_auth_token", "cartify_user"]);
+    if (!stored.cartify_auth_token || !stored.cartify_user?.id) {
+      chrome.action.setBadgeText({ text: "" });
+      return;
+    }
+    const headers = await getAuthHeaders();
+    if (!headers) { chrome.action.setBadgeText({ text: "" }); return; }
+
+    const res = await fetchWithAutoRefresh(
+      `${SUPABASE_URL}/rest/v1/shopping_sessions?user_id=eq.${stored.cartify_user.id}&is_active=eq.true&expires_at=gt.${new Date().toISOString()}&order=started_at.desc&limit=1`,
+      { headers }
+    );
+    const sessions = await res.json();
+    if (!Array.isArray(sessions) || sessions.length === 0) {
+      chrome.action.setBadgeText({ text: "" });
+      return;
+    }
+    const itemsRes = await fetchWithAutoRefresh(
+      `${SUPABASE_URL}/rest/v1/session_items?session_id=eq.${sessions[0].id}&in_cart=eq.true&select=id`,
+      { headers }
+    );
+    const items = await itemsRes.json();
+    const count = Array.isArray(items) ? items.length : 0;
+    chrome.action.setBadgeText({ text: count > 0 ? String(count) : "" });
+    chrome.action.setBadgeBackgroundColor({ color: "#000000" });
+  } catch {
+    chrome.action.setBadgeText({ text: "" });
+  }
+}
+
+// Update badge when session items change
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && (changes.cartify_auth_token || changes.cartify_user)) {
+    updateCartBadge();
+  }
+});
+
 // ── Alarm handler ──
 
 chrome.alarms.onAlarm.addListener((alarm) => {
