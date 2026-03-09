@@ -124,12 +124,8 @@ serve(async (req) => {
     const requiredPhotoCategory = effectiveCategory ? (CATEGORY_TO_PHOTO[effectiveCategory] || "full_body") : "full_body";
 
     // Debug logging for category diagnosis
-    const wearableCategories = new Set(["ring", "bracelet", "necklace", "earring", "glasses", "hat", "top", "dress", "bottom", "shoes", "bag", "nails", "hair"]);
-    const roomCategories = new Set(["living_room", "bedroom", "kitchen", "bathroom", "office"]);
-    const promptMode = roomCategories.has(effectiveCategory || "") ? "room" :
-      wearableCategories.has(effectiveCategory || "") ? "wearable" :
-      effectiveCategory === "pet" ? "pet" : effectiveCategory === "car_interior" ? "car" : effectiveCategory === "garden" ? "garden" : "wearable(default)";
-    console.log(`Category from extension: "${category}", detected server-side: "${detectCategoryFromTitle(title || "", pageUrl || "")}", effective: "${effectiveCategory}", requiredPhoto: "${requiredPhotoCategory}", promptMode: "${promptMode}"`);
+    const wearableCategories = new Set(["ring", "bracelet", "necklace", "earring", "glasses", "hat", "top", "dress", "bottom", "shoes", "bag", "nails", "hair", "watch", "socks", "gloves", "belt", "eyes", "lips", "brows", "arms_product", "back_product"]);
+    console.log(`Category from extension: "${category}", detected server-side: "${detectCategoryFromTitle(title || "", pageUrl || "")}", effective: "${effectiveCategory}", requiredPhoto: "${requiredPhotoCategory}"`);
 
     let resultImageUrl: string | null = null;
     let userPhotoUrl: string | null = null;
