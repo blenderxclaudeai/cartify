@@ -173,7 +173,7 @@ serve(async (req) => {
       if (!userPhotoUrl) {
         const label = PHOTO_LABELS[requiredPhotoCategory] || requiredPhotoCategory;
         return new Response(JSON.stringify({
-          error: `Please upload a photo of your ${label} in your VTO profile to try on this product.`,
+          error: `Please upload a photo of your ${label} in your Cartify profile to try on this product.`,
           missingPhoto: label,
         }), {
           status: 400,
