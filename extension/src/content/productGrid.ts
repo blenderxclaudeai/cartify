@@ -121,6 +121,8 @@ export function extractFromCard(card: HTMLElement): ProductData | null {
     product_title: title,
     product_image: img,
     product_category: detectCardCategory(card),
+    product_price: scrapeCardPrice(card) ?? undefined,
+    retailer_domain: location.hostname.replace(/^www\./, ""),
   };
 }
 
