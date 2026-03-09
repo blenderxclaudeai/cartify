@@ -121,6 +121,8 @@ export function extractFromCard(card: HTMLElement): ProductData | null {
     product_title: title,
     product_image: img,
     product_category: detectCardCategory(card),
+    product_price: scrapeCardPrice(card) ?? undefined,
+    retailer_domain: location.hostname.replace(/^www\./, ""),
   };
 }
 
@@ -198,6 +200,48 @@ function scrapeCardTitle(card: HTMLElement): string {
   if (a?.textContent?.trim()) return a.textContent.trim().slice(0, 200);
 
   return "";
+}
+
+/** Extract price from a product card element */
+function scrapeCardPrice(card: HTMLElement): string | null {
+  // 1. data-price attribute
+  const dataPrice = card.querySelector<HTMLElement>("[data-price]");
+  if (dataPrice) {
+    const val = dataPrice.getAttribute("data-price");
+    if (val) return val;
+  }
+
+  // 2. Common price class selectors
+  const priceSelectors = [
+    "[class*='sale-price'], [class*='salePrice'], [class*='current-price']",
+    "[class*='price'] [class*='current'], [class*='price'] [class*='now']",
+    "[class*='price'] [class*='sale']",
+    "[class*='product-price'], [class*='ProductPrice'], [class*='productPrice']",
+    "[class*='price']",
+  ];
+
+  for (const sel of priceSelectors) {
+    try {
+      const el = card.querySelector<HTMLElement>(sel);
+      if (el?.textContent?.trim()) {
+        const cleaned = cleanCardPrice(el.textContent.trim());
+        if (cleaned) return cleaned;
+      }
+    } catch { /* skip */ }
+  }
+
+  return null;
+}
+
+/** Extract a clean price string from raw card text */
+function cleanCardPrice(raw: string): string | null {
+  const match = raw.match(
+    /(?:[\$€£¥₹])\s?\d[\d\s,.]*\d?|\d[\d\s,.]*\d\s?(?:kr|sek|eur|usd|gbp|dkk|nok)/i
+  );
+  if (match) return match[0].trim();
+  const simple = raw.match(/[\$€£¥₹]\s?\d+[.,]?\d{0,2}/);
+  if (simple) return simple[0].trim();
+  return null;
 }
 
 /**
