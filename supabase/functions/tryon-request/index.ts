@@ -87,14 +87,6 @@ const PHOTO_LABELS: Record<string, string> = {
   arms: "arms",
   back: "back",
   lower_back: "lower back",
-  living_room: "living room",
-  bedroom: "bedroom",
-  kitchen: "kitchen",
-  bathroom: "bathroom",
-  office: "office",
-  dog: "pet",
-  car_interior: "car interior",
-  garden: "garden/patio",
 };
 
 serve(async (req) => {
