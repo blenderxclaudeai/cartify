@@ -67,15 +67,6 @@ const CATEGORY_TO_PHOTO: Record<string, string> = {
   back_product: "back",
   belt: "lower_body",
   arms_product: "arms",
-  living_room: "living_room",
-  bedroom: "bedroom",
-  kitchen: "kitchen",
-  bathroom: "bathroom",
-  office: "office",
-  pet: "dog",
-  car_interior: "car_interior",
-  garden: "garden",
-};
 
 // Human-readable labels for missing photo errors
 const PHOTO_LABELS: Record<string, string> = {
