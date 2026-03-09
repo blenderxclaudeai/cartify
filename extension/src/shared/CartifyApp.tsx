@@ -682,7 +682,7 @@ export function CartifyApp({ mode }: CartifyAppProps) {
                         <button
                           onClick={() => {
                             navigator.clipboard.writeText(c.code).catch(() => {});
-                            setShareToast("Code copied!");
+                            setShareToast(`${c.code} copied!`);
                             setTimeout(() => setShareToast(null), 2000);
                           }}
                           className="rounded-lg bg-foreground px-3 py-1.5 text-[10px] font-bold text-background tracking-wider transition-opacity hover:opacity-80"
