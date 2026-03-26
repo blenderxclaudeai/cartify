@@ -33,9 +33,9 @@ function scrapeTitle(): string {
 
 /** Extract a clean price string from raw text, e.g. "$49.99", "199 kr", "€29,90" */
 function cleanPrice(raw: string): string | null {
-  // Match common price patterns: $49.99, 49.99, 49,99, 199 kr, €29.90, £19.99
+  // Match common price patterns: $49.99, SEK 1 299, 1.299,00 kr, €29,90
   const match = raw.match(
-    /(?:[\$€£¥₹])\s?\d[\d\s,.]*\d|\d[\d\s,.]*\d\s?(?:kr|sek|eur|usd|gbp|dkk|nok|SEK|EUR|USD|GBP)/i
+    /(?:[\$€£¥₹]\s?\d[\d\s,.]*\d|\b(?:USD|EUR|SEK|NOK|DKK|GBP|CAD|AUD|CHF|JPY|INR|KR)\s?\d[\d\s,.]*\d|\d[\d\s,.]*\d\s?(?:kr|usd|eur|sek|nok|dkk|gbp|cad|aud|chf|jpy|inr))/i
   );
   if (match) return match[0].trim();
 
@@ -44,7 +44,7 @@ function cleanPrice(raw: string): string | null {
   if (simple) return simple[0].trim();
 
   // Digits with decimal/comma that look like prices
-  const digits = raw.match(/\d+[.,]\d{2}/);
+  const digits = raw.match(/\d[\d\s,.]*[.,]\d{2}/);
   if (digits) return digits[0].trim();
 
   return null;
@@ -88,6 +88,8 @@ function scrapePrice(): string | null {
   // 4. CSS selectors — common price patterns on retailer sites
   const priceSelectors = [
     "[data-price]",
+    "[data-testid*='price' i]",
+    "[id*='price' i]",
     "[class*='product-price'] [class*='current']",
     "[class*='product-price'] [class*='sale']",
     "[class*='product-price']",
@@ -124,6 +126,23 @@ function scrapePrice(): string | null {
         }
       }
     } catch { /* invalid selector, skip */ }
+  }
+
+  // 5. Broad attribute fallback (for modern component-based storefronts)
+  const fallbackNodes = document.querySelectorAll<HTMLElement>(
+    "[data-price], [data-testid*='price' i], [aria-label*='price' i], [class*='price' i], [id*='price' i]"
+  );
+  for (const node of Array.from(fallbackNodes).slice(0, 120)) {
+    const candidate = [
+      node.getAttribute("data-price") || "",
+      node.getAttribute("aria-label") || "",
+      node.textContent || "",
+    ]
+      .join(" ")
+      .trim();
+    if (!candidate) continue;
+    const cleaned = cleanPrice(candidate);
+    if (cleaned) return cleaned;
   }
 
   return null;
