@@ -470,6 +470,8 @@ export function CartifyApp({ mode }: CartifyAppProps) {
         i.id === item.id ? { ...i, in_cart: newInCart, interaction_type: newInCart ? "cart" : "viewed" } : i
       )
     );
+    // Background re-sync to keep state fresh
+    setTimeout(() => loadSessionItems(false), 500);
   };
 
   const handleTryOnSessionItem = (item: SessionItem) => {
