@@ -445,6 +445,8 @@ export function CartifyApp({ mode }: CartifyAppProps) {
       },
     });
     setSessionItems((prev) => prev.filter((i) => i.id !== item.id));
+    // Background re-sync to keep state fresh
+    setTimeout(() => loadSessionItems(false), 500);
   };
 
   const handleToggleCart = async (item: SessionItem) => {
