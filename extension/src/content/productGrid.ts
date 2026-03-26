@@ -213,6 +213,7 @@ function scrapeCardPrice(card: HTMLElement): string | null {
 
   // 2. Common price class selectors
   const priceSelectors = [
+    "[data-price], [data-testid*='price' i], [aria-label*='price' i]",
     "[class*='sale-price'], [class*='salePrice'], [class*='current-price']",
     "[class*='price'] [class*='current'], [class*='price'] [class*='now']",
     "[class*='price'] [class*='sale']",
@@ -227,8 +228,17 @@ function scrapeCardPrice(card: HTMLElement): string | null {
         const cleaned = cleanCardPrice(el.textContent.trim());
         if (cleaned) return cleaned;
       }
+
+      if (el?.getAttribute("aria-label")) {
+        const cleaned = cleanCardPrice(el.getAttribute("aria-label") || "");
+        if (cleaned) return cleaned;
+      }
     } catch { /* skip */ }
   }
+
+  // 3. Fallback: scan whole card text
+  const cardTextPrice = cleanCardPrice(card.textContent || "");
+  if (cardTextPrice) return cardTextPrice;
 
   return null;
 }
@@ -236,7 +246,7 @@ function scrapeCardPrice(card: HTMLElement): string | null {
 /** Extract a clean price string from raw card text */
 function cleanCardPrice(raw: string): string | null {
   const match = raw.match(
-    /(?:[\$€£¥₹])\s?\d[\d\s,.]*\d?|\d[\d\s,.]*\d\s?(?:kr|sek|eur|usd|gbp|dkk|nok)/i
+    /(?:[\$€£¥₹]\s?\d[\d\s,.]*\d|\b(?:USD|EUR|SEK|NOK|DKK|GBP|CAD|AUD|CHF|JPY|INR|KR)\s?\d[\d\s,.]*\d|\d[\d\s,.]*\d\s?(?:kr|usd|eur|sek|nok|dkk|gbp|cad|aud|chf|jpy|inr))/i
   );
   if (match) return match[0].trim();
   const simple = raw.match(/[\$€£¥₹]\s?\d+[.,]?\d{0,2}/);
