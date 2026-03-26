@@ -1,61 +1,47 @@
 
 
-## Fix List: Login, Product Focus, Extension Polish
+## Fix Plan: Syntax Error, Auto-Refresh, and Cart Total Visibility
 
-### 1. Fix login flow — the /login 404 issue
+### Problem Summary
 
-The screenshot shows `/login` returning a 404. The OAuth redirect URL in `extension/src/lib/auth.ts` uses `chrome.identity.getRedirectURL()` which should work for the extension flow. However, the `webAppSync.ts` content script still sends `VTO_SESSION_FROM_WEB` — this suggests the OAuth flow is opening a browser tab to the website instead of using `chrome.identity`. 
+1. **Build-breaking syntax error** in `CartifyApp.tsx` — lines 929–933 contain orphaned/duplicate JSX (a stray `>`, a duplicate SVG share button, and unmatched closing tags). This is why the extension build fails.
+2. **No auto-refresh** after actions (add to cart, remove, try-on) — the UI updates local state but doesn't signal other views to refresh.
+3. **Cart total widget exists** (lines 1012–1055) but is invisible because the build crashes before reaching it.
 
-**Root cause:** The `chrome.identity.launchWebAuthFlow` redirect URL (`chrome.identity.getRedirectURL()`) must be registered in the backend's OAuth redirect allowlist. If it's not, the provider may fall back to a web redirect. Also, the `redirect_to` parameter in the auth URL needs to match the extension's redirect URL pattern exactly.
+### Changes
 
-**Fix:** Ensure the auth URL includes the correct `redirect_to` for chrome.identity. The current code looks correct — the issue is likely on the backend OAuth config side. We need to verify the redirect URL is whitelisted. But from the code side, the flow should work. The `/login` 404 happens because the old OAuth config redirects to `/login`. We should add `/login` as a catch-all redirect to `/` in `App.tsx` so users never see a 404 there.
+**File: `extension/src/shared/CartifyApp.tsx`**
 
-**Files:** `src/App.tsx` — add a redirect from `/login` to `/`
+1. **Delete orphaned lines 929–933** — remove the duplicate JSX fragment:
+   ```
+   929:                           >
+   930:                             <svg ...share icon duplicate...></svg>
+   931:                           </button>
+   932:                         </div>
+   933:                       </div>
+   ```
+   Line 928 (`</div>`) correctly closes the showroom card. Line 934 (`))`) correctly closes the `.map()`. The lines between are garbage from a bad merge.
 
-### 2. Remove non-person categories from extension
+2. **Add auto-refresh after mutations** — extract session loading into a reusable `loadSessionItems()` function and call it after:
+   - `handleToggleCart` (cart add/remove)
+   - `handleRemoveSessionItem` (delete)
+   - `handleTryOnSessionItem` (try-on queued)
+   
+   Also listen to `chrome.storage.onChanged` for `cartify_recent_tryons` to auto-refresh showroom results when a try-on completes in background.
 
-Remove Home, Pets, Vehicle, Garden from `CATEGORY_GROUPS` in `Popup.tsx`. Keep only "You". Remove the tab bar entirely since there's only one group.
+3. **Ensure cart total is always visible** — the summary bar already renders cart total at the bottom of the Session tab. Once the syntax error is fixed, it will appear. No additional changes needed for this.
 
-**File:** `extension/src/popup/Popup.tsx`
+### What Becomes Visible After Fix
 
-### 3. Update "Try on anything" section — remove home/garden products
+- Session summary bar at bottom: item count, cart count, session total, cart total
+- Coupon deals banner
+- Hover overlays on showroom cards
+- All action buttons working and triggering UI refresh
 
-Remove: Lamps, Chairs, Vases, Planters, Cushions from both `tryOnCategories` and `tryOnCategories2`. Keep only wearable/person items. The remaining person-focused items with white backgrounds: Dress, Sneakers, Watch, Sunglasses, Handbag, Ring, Jacket, Hat, Boots, Necklace, Blazer, Bracelet, Jeans, Heels.
+### Technical Details
 
-Update the section subtitle to remove "home decor, garden" language.
-
-Update the FAQ answer about "What kind of products can I try on?" to remove home decor mention.
-
-**File:** `src/pages/LandingPage.tsx`
-
-### 4. Fix content script login pill text
-
-Change "Log in to Cartify to try on" → "Log in" (shorter, cleaner).
-
-**File:** `extension/src/content/ui.ts`
-
-### 5. Add Settings screen to extension
-
-Add a third screen "settings" accessible from the header (gear icon next to Sign Out). Settings page includes:
-- **Display mode**: Radio/toggle between "Popup" and "Side Panel" — stores preference in `chrome.storage.local` as `cartify_display_mode`
-- Sign Out button moved here
-
-**File:** `extension/src/popup/Popup.tsx`
-
-### 6. Remaining VTO references
-
-`webAppSync.ts` still uses `VTO_SESSION_FROM_WEB` message type and `background/index.ts` listens for it. Rename to `CARTIFY_SESSION_FROM_WEB` for consistency.
-
-**Files:** `extension/src/content/webAppSync.ts`, `extension/src/background/index.ts`
-
-### Files summary
-
-| File | Changes |
-|------|---------|
-| `src/App.tsx` | Add `/login` redirect to `/` |
-| `src/pages/LandingPage.tsx` | Remove lamp/chair/vase/planter/cushion, update subtitle & FAQ |
-| `extension/src/popup/Popup.tsx` | Remove non-You categories, remove tab bar, add Settings screen with display mode toggle |
-| `extension/src/content/ui.ts` | Shorten login pill text to "Log in" |
-| `extension/src/content/webAppSync.ts` | Rename VTO_ message types to CARTIFY_ |
-| `extension/src/background/index.ts` | Rename VTO_ message types to CARTIFY_ |
+- The `loadSessionItems` function will be called both from the `useEffect` and after mutations, using the same fetch logic
+- Storage listener will also trigger showroom refresh when `cartify_recent_tryons` changes
+- Vite version (`^5.4.19`) and `@vitejs/plugin-react-swc` (`^3.11.0`) are compatible — no version conflict in `package.json`. The ChatGPT report about Vite 8 is incorrect for this repo.
+- `lovable-tagger` (`^1.1.13`) is a dev dependency that only runs in development mode and is gated by `mode === "development"` — it won't block production builds.
 
