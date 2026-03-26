@@ -189,50 +189,66 @@ export function CartifyApp({ mode }: CartifyAppProps) {
     });
   }, [storedUser, screen]);
 
-  // Load session items
+  // Reusable session items loader
+  const loadSessionItems = async (showLoading = true) => {
+    if (!storedUser) return;
+    if (showLoading) setSessionLoading(true);
+
+    const stored = await chrome.storage.local.get("cartify_auth_token");
+    const token = stored.cartify_auth_token;
+    if (!token) { setSessionLoading(false); return; }
+
+    try {
+      const sessRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/shopping_sessions?user_id=eq.${storedUser.id}&is_active=eq.true&expires_at=gt.${new Date().toISOString()}&order=started_at.desc&limit=1`,
+        { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` } }
+      );
+      const sessions = await sessRes.json();
+      if (!Array.isArray(sessions) || sessions.length === 0) {
+        setSessionItems([]);
+        setSessionLoading(false);
+        return;
+      }
+
+      const sessionId = sessions[0].id;
+      const itemsRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/session_items?session_id=eq.${sessionId}&order=created_at.desc`,
+        { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` } }
+      );
+      const items = await itemsRes.json();
+      setSessionItems(Array.isArray(items) ? items : []);
+    } catch {
+      setSessionItems([]);
+    }
+    setSessionLoading(false);
+  };
+
+  // Reusable showroom results loader
+  const loadResults = async (showLoading = true) => {
+    if (!storedUser) return;
+    if (showLoading) setResultsLoading(true);
+
+    const stored = await chrome.storage.local.get("cartify_auth_token");
+    const token = stored.cartify_auth_token;
+    if (!token) { setResultsLoading(false); return; }
+
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/tryon_requests?user_id=eq.${storedUser.id}&order=created_at.desc`,
+        { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` } }
+      );
+      const data = await res.json();
+      setResults(Array.isArray(data) ? data : []);
+    } catch {
+      setResults([]);
+    }
+    setResultsLoading(false);
+  };
+
+  // Load session items when on session screen
   useEffect(() => {
     if (!storedUser || screen !== "session") return;
-    setSessionLoading(true);
-
-    chrome.storage.local.get("cartify_auth_token", async (result) => {
-      const token = result.cartify_auth_token;
-      if (!token) { setSessionLoading(false); return; }
-
-      try {
-        // Get active session
-        const sessRes = await fetch(
-          `${SUPABASE_URL}/rest/v1/shopping_sessions?user_id=eq.${storedUser.id}&is_active=eq.true&expires_at=gt.${new Date().toISOString()}&order=started_at.desc&limit=1`,
-          {
-            headers: {
-              apikey: SUPABASE_ANON_KEY,
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-        const sessions = await sessRes.json();
-        if (!Array.isArray(sessions) || sessions.length === 0) {
-          setSessionItems([]);
-          setSessionLoading(false);
-          return;
-        }
-
-        const sessionId = sessions[0].id;
-        const itemsRes = await fetch(
-          `${SUPABASE_URL}/rest/v1/session_items?session_id=eq.${sessionId}&order=created_at.desc`,
-          {
-            headers: {
-              apikey: SUPABASE_ANON_KEY,
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-        const items = await itemsRes.json();
-        setSessionItems(Array.isArray(items) ? items : []);
-      } catch {
-        setSessionItems([]);
-      }
-      setSessionLoading(false);
-    });
+    loadSessionItems();
   }, [storedUser, screen]);
 
   // Load profile photos
