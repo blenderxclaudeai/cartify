@@ -55,6 +55,12 @@ declare namespace chrome {
           areaName: string
         ) => void
       ): void;
+      removeListener(
+        callback: (
+          changes: Record<string, { oldValue?: any; newValue?: any }>,
+          areaName: string
+        ) => void
+      ): void;
     };
   }
 }
