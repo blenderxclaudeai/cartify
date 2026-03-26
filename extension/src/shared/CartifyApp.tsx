@@ -161,78 +161,87 @@ export function CartifyApp({ mode }: CartifyAppProps) {
     return () => chrome.storage.onChanged.removeListener(listener);
   }, []);
 
-  // Load try-on results
+  // Load try-on results when on showroom screen
   useEffect(() => {
     if (!storedUser || screen !== "showroom") return;
-    setResultsLoading(true);
-
-    chrome.storage.local.get("cartify_auth_token", async (result) => {
-      const token = result.cartify_auth_token;
-      if (!token) { setResultsLoading(false); return; }
-
-      try {
-        const res = await fetch(
-          `${SUPABASE_URL}/rest/v1/tryon_requests?user_id=eq.${storedUser.id}&order=created_at.desc`,
-          {
-            headers: {
-              apikey: SUPABASE_ANON_KEY,
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-        const data = await res.json();
-        setResults(Array.isArray(data) ? data : []);
-      } catch {
-        setResults([]);
-      }
-      setResultsLoading(false);
-    });
+    loadResults();
   }, [storedUser, screen]);
 
-  // Load session items
+  // Auto-refresh showroom when try-on results complete in background
+  useEffect(() => {
+    const listener = (
+      changes: Record<string, { oldValue?: any; newValue?: any }>,
+      area: string
+    ) => {
+      if (area !== "local") return;
+      if (changes.cartify_recent_tryons?.newValue) {
+        loadResults(false);
+      }
+    };
+    chrome.storage.onChanged.addListener(listener);
+    return () => chrome.storage.onChanged.removeListener(listener);
+  }, [storedUser]);
+
+  // Reusable session items loader
+  const loadSessionItems = async (showLoading = true) => {
+    if (!storedUser) return;
+    if (showLoading) setSessionLoading(true);
+
+    const stored = await chrome.storage.local.get("cartify_auth_token");
+    const token = stored.cartify_auth_token;
+    if (!token) { setSessionLoading(false); return; }
+
+    try {
+      const sessRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/shopping_sessions?user_id=eq.${storedUser.id}&is_active=eq.true&expires_at=gt.${new Date().toISOString()}&order=started_at.desc&limit=1`,
+        { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` } }
+      );
+      const sessions = await sessRes.json();
+      if (!Array.isArray(sessions) || sessions.length === 0) {
+        setSessionItems([]);
+        setSessionLoading(false);
+        return;
+      }
+
+      const sessionId = sessions[0].id;
+      const itemsRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/session_items?session_id=eq.${sessionId}&order=created_at.desc`,
+        { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` } }
+      );
+      const items = await itemsRes.json();
+      setSessionItems(Array.isArray(items) ? items : []);
+    } catch {
+      setSessionItems([]);
+    }
+    setSessionLoading(false);
+  };
+
+  // Reusable showroom results loader
+  const loadResults = async (showLoading = true) => {
+    if (!storedUser) return;
+    if (showLoading) setResultsLoading(true);
+
+    const stored = await chrome.storage.local.get("cartify_auth_token");
+    const token = stored.cartify_auth_token;
+    if (!token) { setResultsLoading(false); return; }
+
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/tryon_requests?user_id=eq.${storedUser.id}&order=created_at.desc`,
+        { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` } }
+      );
+      const data = await res.json();
+      setResults(Array.isArray(data) ? data : []);
+    } catch {
+      setResults([]);
+    }
+    setResultsLoading(false);
+  };
+
+  // Load session items when on session screen
   useEffect(() => {
     if (!storedUser || screen !== "session") return;
-    setSessionLoading(true);
-
-    chrome.storage.local.get("cartify_auth_token", async (result) => {
-      const token = result.cartify_auth_token;
-      if (!token) { setSessionLoading(false); return; }
-
-      try {
-        // Get active session
-        const sessRes = await fetch(
-          `${SUPABASE_URL}/rest/v1/shopping_sessions?user_id=eq.${storedUser.id}&is_active=eq.true&expires_at=gt.${new Date().toISOString()}&order=started_at.desc&limit=1`,
-          {
-            headers: {
-              apikey: SUPABASE_ANON_KEY,
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-        const sessions = await sessRes.json();
-        if (!Array.isArray(sessions) || sessions.length === 0) {
-          setSessionItems([]);
-          setSessionLoading(false);
-          return;
-        }
-
-        const sessionId = sessions[0].id;
-        const itemsRes = await fetch(
-          `${SUPABASE_URL}/rest/v1/session_items?session_id=eq.${sessionId}&order=created_at.desc`,
-          {
-            headers: {
-              apikey: SUPABASE_ANON_KEY,
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-        const items = await itemsRes.json();
-        setSessionItems(Array.isArray(items) ? items : []);
-      } catch {
-        setSessionItems([]);
-      }
-      setSessionLoading(false);
-    });
+    loadSessionItems();
   }, [storedUser, screen]);
 
   // Load profile photos
@@ -436,6 +445,8 @@ export function CartifyApp({ mode }: CartifyAppProps) {
       },
     });
     setSessionItems((prev) => prev.filter((i) => i.id !== item.id));
+    // Background re-sync to keep state fresh
+    setTimeout(() => loadSessionItems(false), 500);
   };
 
   const handleToggleCart = async (item: SessionItem) => {
@@ -459,6 +470,8 @@ export function CartifyApp({ mode }: CartifyAppProps) {
         i.id === item.id ? { ...i, in_cart: newInCart, interaction_type: newInCart ? "cart" : "viewed" } : i
       )
     );
+    // Background re-sync to keep state fresh
+    setTimeout(() => loadSessionItems(false), 500);
   };
 
   const handleTryOnSessionItem = (item: SessionItem) => {
@@ -925,11 +938,6 @@ export function CartifyApp({ mode }: CartifyAppProps) {
                             </div>
                           </div>
                         )}
-                      </div>
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-                          </button>
-                        </div>
                       </div>
                     ))}
                   </div>
