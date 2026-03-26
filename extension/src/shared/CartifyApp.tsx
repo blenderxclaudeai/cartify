@@ -182,6 +182,25 @@ export function CartifyApp({ mode }: CartifyAppProps) {
     return () => chrome.storage.onChanged.removeListener(listener);
   }, [storedUser]);
 
+  // Auto-refresh session when background scripts mutate session items
+  useEffect(() => {
+    if (!storedUser) return;
+
+    const listener = (
+      changes: Record<string, { oldValue?: any; newValue?: any }>,
+      area: string
+    ) => {
+      if (area !== "local") return;
+      if (screen !== "session") return;
+      if (changes.cartify_session_updated_at?.newValue) {
+        loadSessionItems(false);
+      }
+    };
+
+    chrome.storage.onChanged.addListener(listener);
+    return () => chrome.storage.onChanged.removeListener(listener);
+  }, [storedUser, screen]);
+
   // Reusable session items loader
   const loadSessionItems = async (showLoading = true) => {
     if (!storedUser) return;
@@ -431,6 +450,38 @@ export function CartifyApp({ mode }: CartifyAppProps) {
     }
   };
 
+  const handleAddToRetailerCart = (productUrl: string, retailerDomain?: string | null) => {
+    if (!productUrl) return;
+
+    chrome.runtime.sendMessage(
+      {
+        type: "CARTIFY_ADD_TO_RETAILER_CART",
+        payload: {
+          product_url: productUrl,
+          retailer_domain: retailerDomain || undefined,
+        },
+      },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          setShareToast("Could not reach current tab");
+          setTimeout(() => setShareToast(null), 2500);
+          return;
+        }
+
+        if (response?.ok) {
+          if (response.openedProductTab) {
+            setShareToast("Opened retailer page and adding to cart…");
+          } else {
+            setShareToast("Added to retailer cart");
+          }
+        } else {
+          setShareToast(response?.error || "Could not add to retailer cart");
+        }
+        setTimeout(() => setShareToast(null), 2500);
+      }
+    );
+  };
+
 
   const handleRemoveSessionItem = async (item: SessionItem) => {
     const stored = await chrome.storage.local.get("cartify_auth_token");
@@ -445,6 +496,7 @@ export function CartifyApp({ mode }: CartifyAppProps) {
       },
     });
     setSessionItems((prev) => prev.filter((i) => i.id !== item.id));
+    chrome.storage.local.set({ cartify_session_updated_at: Date.now() });
     // Background re-sync to keep state fresh
     setTimeout(() => loadSessionItems(false), 500);
   };
@@ -470,6 +522,7 @@ export function CartifyApp({ mode }: CartifyAppProps) {
         i.id === item.id ? { ...i, in_cart: newInCart, interaction_type: newInCart ? "cart" : "viewed" } : i
       )
     );
+    chrome.storage.local.set({ cartify_session_updated_at: Date.now() });
     // Background re-sync to keep state fresh
     setTimeout(() => loadSessionItems(false), 500);
   };
@@ -489,6 +542,8 @@ export function CartifyApp({ mode }: CartifyAppProps) {
         if (response?.ok) {
           setShareToast("Try-on queued!");
           setTimeout(() => setShareToast(null), 2500);
+            chrome.storage.local.set({ cartify_session_updated_at: Date.now() });
+            setTimeout(() => loadSessionItems(false), 800);
         }
       }
     );
@@ -570,33 +625,62 @@ export function CartifyApp({ mode }: CartifyAppProps) {
   const pendingResults = results.filter((r) => !r.result_image_url);
 
   const cartItems = sessionItems.filter((i) => i.in_cart);
+
+  const parsePriceValue = (rawValue: string | null | undefined): number | null => {
+    if (!rawValue) return null;
+
+    const value = rawValue.replace(/\u00A0/g, " ").trim();
+    const matches = value.match(/(?:\d{1,3}(?:[.,\s]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)/g);
+    if (!matches?.length) return null;
+
+    let normalized = matches.sort((a, b) => b.length - a.length)[0].replace(/\s/g, "");
+    const hasComma = normalized.includes(",");
+    const hasDot = normalized.includes(".");
+
+    if (hasComma && hasDot) {
+      if (normalized.lastIndexOf(",") > normalized.lastIndexOf(".")) {
+        normalized = normalized.replace(/\./g, "").replace(",", ".");
+      } else {
+        normalized = normalized.replace(/,/g, "");
+      }
+    } else if (hasComma) {
+      const [, fraction = ""] = normalized.split(",");
+      normalized = fraction.length === 2
+        ? normalized.replace(/\./g, "").replace(",", ".")
+        : normalized.replace(/,/g, "");
+    } else if ((normalized.match(/\./g) || []).length > 1) {
+      normalized = normalized.replace(/\./g, "");
+    }
+
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
   const sessionTotal = sessionItems.reduce((sum, i) => {
-    if (!i.product_price) return sum;
-    const num = parseFloat(i.product_price.replace(/[^0-9.]/g, ""));
-    return isNaN(num) ? sum : sum + num;
+    const num = parsePriceValue(i.product_price);
+    return num === null ? sum : sum + num;
   }, 0);
   const cartTotal = cartItems.reduce((sum, i) => {
-    if (!i.product_price) return sum;
-    const num = parseFloat(i.product_price.replace(/[^0-9.]/g, ""));
-    return isNaN(num) ? sum : sum + num;
+    const num = parsePriceValue(i.product_price);
+    return num === null ? sum : sum + num;
   }, 0);
+  const itemsMissingPrice = sessionItems.filter((i) => !parsePriceValue(i.product_price)).length;
 
   // Detect currency symbol/prefix from first priced item
   const currencySymbol = (() => {
     const priced = sessionItems.find((i) => i.product_price);
     if (!priced?.product_price) return "$";
     // Match currency symbols or currency codes (kr, SEK, EUR, USD, etc.)
-    const symbolMatch = priced.product_price.match(/^[\$€£¥₹]/);
-    if (symbolMatch) return symbolMatch[0];
-    const codeMatch = priced.product_price.match(/\b(kr|sek|eur|usd|gbp|dkk|nok)\b/i);
+    const codePrefix = priced.product_price.match(/^\s*(kr|sek|eur|usd|gbp|dkk|nok|cad|aud)\b/i);
+    if (codePrefix) return codePrefix[1].toUpperCase() + " ";
+    const symbolMatch = priced.product_price.match(/^\s*[\$€£¥₹]/);
+    if (symbolMatch) return symbolMatch[0].trim();
+    const codeMatch = priced.product_price.match(/\b(kr|sek|eur|usd|gbp|dkk|nok|cad|aud)\b/i);
     if (codeMatch) return codeMatch[1].toUpperCase() + " ";
     const trailingSymbol = priced.product_price.match(/[\$€£¥₹]/);
     if (trailingSymbol) return trailingSymbol[0];
     return "$";
   })();
-
-  const getAffiliateUrl = (r: TryonResult) =>
-    `${SUPABASE_URL}/functions/v1/redirect?target=${encodeURIComponent(r.page_url)}&retailerDomain=${r.retailer_domain ?? ""}`;
 
   return (
     <div className={containerClass + " relative"}>
@@ -642,7 +726,7 @@ export function CartifyApp({ mode }: CartifyAppProps) {
             <p className="text-[11px] text-muted-foreground">Products you've interacted with today</p>
           </div>
           <button
-            onClick={() => { setSessionLoading(true); setScreen("session"); }}
+            onClick={() => { void loadSessionItems(true); }}
             className="text-muted-foreground text-[14px] px-2 py-1 rounded-lg hover:bg-secondary hover:text-foreground transition-colors"
             title="Refresh"
           >
@@ -756,6 +840,12 @@ export function CartifyApp({ mode }: CartifyAppProps) {
                         className="w-[80%] rounded-lg bg-foreground/95 py-2 text-[11px] font-medium text-background shadow-sm transition-opacity hover:opacity-90"
                       >
                         {item.in_cart ? "Remove from Cart" : "Add to Cart"}
+                      </button>
+                      <button
+                        onClick={() => handleAddToRetailerCart(item.product_url, item.retailer_domain)}
+                        className="w-[80%] rounded-lg bg-background/95 py-2 text-[11px] font-medium text-foreground shadow-sm transition-opacity hover:opacity-90"
+                      >
+                        Retailer Cart
                       </button>
                       <button
                         onClick={() => handleRemoveSessionItem(item)}
@@ -894,14 +984,12 @@ export function CartifyApp({ mode }: CartifyAppProps) {
                         />
                         {/* Hover overlay */}
                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-xl bg-foreground/0 opacity-0 transition-all duration-200 group-hover:bg-foreground/50 group-hover:opacity-100">
-                          <a
-                            href={getAffiliateUrl(r)}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            onClick={() => handleAddToRetailerCart(r.page_url, r.retailer_domain)}
                             className="w-[80%] rounded-lg bg-background/95 py-2 text-center text-[11px] font-medium text-foreground shadow-sm transition-opacity hover:opacity-90 no-underline"
                           >
                             Add to Cart
-                          </a>
+                          </button>
                           <div className="flex gap-2">
                             <button
                               onClick={() => handleDownload(r)}
@@ -1050,6 +1138,12 @@ export function CartifyApp({ mode }: CartifyAppProps) {
                   {currencySymbol}{cartTotal.toFixed(2)}
                 </p>
               </div>
+            )}
+
+            {itemsMissingPrice > 0 && (
+              <p className="text-center text-[10px] text-muted-foreground">
+                {itemsMissingPrice} item{itemsMissingPrice !== 1 ? "s" : ""} missing detectable price
+              </p>
             )}
 
             {/* Savings from coupons */}

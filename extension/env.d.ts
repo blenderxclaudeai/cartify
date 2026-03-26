@@ -11,8 +11,23 @@ declare namespace chrome {
   }
 
   namespace tabs {
+    type Tab = { id?: number; url?: string };
     function create(props: { url: string; active?: boolean }, callback?: (tab: { id?: number }) => void): void;
     function remove(tabId: number): void;
+    function query(
+      queryInfo: { active?: boolean; currentWindow?: boolean },
+      callback: (tabs: Tab[]) => void
+    ): void;
+    function sendMessage(tabId: number, message: any, responseCallback?: (response: any) => void): void;
+    const onUpdated: {
+      addListener(
+        callback: (
+          tabId: number,
+          changeInfo: { status?: string },
+          tab: Tab
+        ) => void
+      ): void;
+    };
   }
 
   namespace runtime {
