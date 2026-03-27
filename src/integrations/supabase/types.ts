@@ -134,6 +134,7 @@ export type Database = {
           id: string
           is_active: boolean | null
           min_purchase: string | null
+          scraped_at: string | null
         }
         Insert: {
           code: string
@@ -146,6 +147,7 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           min_purchase?: string | null
+          scraped_at?: string | null
         }
         Update: {
           code?: string
@@ -158,6 +160,7 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           min_purchase?: string | null
+          scraped_at?: string | null
         }
         Relationships: []
       }
