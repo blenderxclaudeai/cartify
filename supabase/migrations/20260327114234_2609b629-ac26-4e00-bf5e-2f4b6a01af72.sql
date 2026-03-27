@@ -1,0 +1,1 @@
+ALTER TABLE public.retailer_coupons ADD COLUMN scraped_at timestamptz DEFAULT NULL;

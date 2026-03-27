@@ -415,7 +415,7 @@ async function handleAddToRetailerCart(payload: any): Promise<any> {
     if (sameDomain) {
       const response = await sendMessageToTab(activeTab.id, {
         type: "CARTIFY_ADD_TO_RETAILER_CART",
-        payload: { target_url: targetUrl },
+        payload: { target_url: targetUrl, variant: payload?.variant },
       });
       if (response?.ok) {
         return { ok: true, clickedCurrentPage: true };
@@ -439,14 +439,16 @@ async function handleAddToRetailerCart(payload: any): Promise<any> {
     return { ok: false, error: "Could not open retailer product page" };
   }
 
-  await chrome.storage.local.set({
-    cartify_pending_retailer_cart: {
-      tabId: openedTab.id,
-      targetUrl,
-      variant: payload?.variant || null,
-      createdAt: Date.now(),
-    },
-  });
+  // Store pending cart item keyed by tabId
+  const stored = await chrome.storage.local.get("cartify_pending_retailer_carts");
+  const pendingCarts: Record<string, any> = stored.cartify_pending_retailer_carts || {};
+  pendingCarts[String(openedTab.id)] = {
+    tabId: openedTab.id,
+    targetUrl,
+    variant: payload?.variant || null,
+    createdAt: Date.now(),
+  };
+  await chrome.storage.local.set({ cartify_pending_retailer_carts: pendingCarts });
 
   return { ok: true, openedProductTab: true };
 }
@@ -531,25 +533,64 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === "CARTIFY_EXTRACT_VARIANTS") {
-    // Extract variants from a product page by opening it in a tab and querying the content script
+    // Extract variants from a product page — open background tab if needed
     const targetUrl = msg.payload?.product_url;
     if (!targetUrl) {
       sendResponse({ ok: false, error: "No URL" });
       return true;
     }
-    // Try to find an existing tab with this URL's domain
     const targetDomain = getDomainFromUrl(targetUrl);
     (async () => {
       try {
+        // Try existing tabs first
         const tabs = await chrome.tabs.query({});
         const matchingTab = tabs.find((t) => t.url && getDomainFromUrl(t.url) === targetDomain);
         if (matchingTab?.id) {
           const response = await sendMessageToTab(matchingTab.id, { type: "CARTIFY_EXTRACT_VARIANTS" });
           sendResponse(response || { ok: false });
-        } else {
-          // No matching tab — can't extract without opening a tab
-          sendResponse({ ok: false, error: "No open tab for this retailer" });
+          return;
         }
+
+        // No matching tab — open a background tab
+        const bgTab = await new Promise<chrome.tabs.Tab | null>((resolve) => {
+          chrome.tabs.create({ url: targetUrl, active: false }, (tab) => {
+            if (chrome.runtime.lastError || !tab) { resolve(null); return; }
+            resolve(tab);
+          });
+        });
+
+        if (!bgTab?.id) {
+          sendResponse({ ok: false, error: "Could not open background tab" });
+          return;
+        }
+
+        const bgTabId = bgTab.id;
+
+        // Wait for tab to complete loading
+        await new Promise<void>((resolve) => {
+          const listener = (tid: number, info: chrome.tabs.TabChangeInfo) => {
+            if (tid === bgTabId && info.status === "complete") {
+              chrome.tabs.onUpdated.removeListener(listener);
+              resolve();
+            }
+          };
+          chrome.tabs.onUpdated.addListener(listener);
+          // Timeout after 15s
+          setTimeout(() => { chrome.tabs.onUpdated.removeListener(listener); resolve(); }, 15000);
+        });
+
+        // Retry up to 3 times with 1.5s delay
+        let response: any = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          response = await sendMessageToTab(bgTabId, { type: "CARTIFY_EXTRACT_VARIANTS" });
+          if (response?.ok) break;
+          if (attempt < 3) await new Promise((r) => setTimeout(r, 1500));
+        }
+
+        // Close background tab
+        try { chrome.tabs.remove(bgTabId); } catch {}
+
+        sendResponse(response || { ok: false });
       } catch {
         sendResponse({ ok: false });
       }
@@ -569,17 +610,40 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       const headers = await getAuthHeaders();
       if (!headers) { sendResponse({ ok: false }); return; }
       try {
+        const domain = msg.domain;
         const res = await fetchWithAutoRefresh(
-          `${SUPABASE_URL}/rest/v1/retailer_coupons?domain=eq.${encodeURIComponent(msg.domain)}&is_active=eq.true&select=code,description,discount_type,discount_value,min_purchase`,
+          `${SUPABASE_URL}/rest/v1/retailer_coupons?domain=eq.${encodeURIComponent(domain)}&is_active=eq.true&select=code,description,discount_type,discount_value,min_purchase`,
           { headers }
         );
         const coupons = await res.json();
         if (Array.isArray(coupons) && coupons.length > 0) {
           await chrome.storage.local.set({ cartify_active_coupons: coupons });
-        } else {
-          await chrome.storage.local.remove("cartify_active_coupons");
+          sendResponse({ ok: true, count: coupons.length });
+          return;
         }
-        sendResponse({ ok: true, count: Array.isArray(coupons) ? coupons.length : 0 });
+
+        // No cached coupons — try scraping via edge function
+        try {
+          const scrapeRes = await fetch(`${SUPABASE_URL}/functions/v1/scrape-coupons`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              apikey: SUPABASE_ANON_KEY,
+            },
+            body: JSON.stringify({ domain }),
+          });
+          const scrapeText = await scrapeRes.text();
+          let scraped: any;
+          try { scraped = JSON.parse(scrapeText); } catch { scraped = {}; }
+          if (Array.isArray(scraped?.coupons) && scraped.coupons.length > 0) {
+            await chrome.storage.local.set({ cartify_active_coupons: scraped.coupons });
+            sendResponse({ ok: true, count: scraped.coupons.length });
+            return;
+          }
+        } catch { /* scraping failed, continue */ }
+
+        await chrome.storage.local.remove("cartify_active_coupons");
+        sendResponse({ ok: true, count: 0 });
       } catch {
         sendResponse({ ok: false });
       }
@@ -799,12 +863,14 @@ chrome.storage.onChanged.addListener((changes, area) => {
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status !== "complete") return;
 
-  chrome.storage.local.get("cartify_pending_retailer_cart").then(async (result) => {
-    const pending = result.cartify_pending_retailer_cart;
-    if (!pending || pending.tabId !== tabId) return;
+  chrome.storage.local.get("cartify_pending_retailer_carts").then(async (result) => {
+    const pendingCarts: Record<string, any> = result.cartify_pending_retailer_carts || {};
+    const pending = pendingCarts[String(tabId)];
+    if (!pending) return;
 
     if (Date.now() - (pending.createdAt || 0) > 120_000) {
-      await chrome.storage.local.remove("cartify_pending_retailer_cart");
+      delete pendingCarts[String(tabId)];
+      await chrome.storage.local.set({ cartify_pending_retailer_carts: pendingCarts });
       return;
     }
 
@@ -816,8 +882,14 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
       });
 
       if (response?.ok) {
-        await chrome.storage.local.remove("cartify_pending_retailer_cart");
+        delete pendingCarts[String(tabId)];
+        await chrome.storage.local.set({ cartify_pending_retailer_carts: pendingCarts });
         await chrome.storage.local.set({ cartify_session_updated_at: Date.now() });
+
+        // Wait 2 seconds then close the tab
+        setTimeout(() => {
+          try { chrome.tabs.remove(tabId); } catch {}
+        }, 2000);
         return;
       }
 
@@ -826,7 +898,8 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
       }
     }
     // All retries failed — clean up
-    await chrome.storage.local.remove("cartify_pending_retailer_cart");
+    delete pendingCarts[String(tabId)];
+    await chrome.storage.local.set({ cartify_pending_retailer_carts: pendingCarts });
   }).catch(() => {});
 });
 

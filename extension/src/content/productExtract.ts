@@ -8,21 +8,136 @@ function getMeta(property: string): string | null {
 }
 
 function scrapeImage(): string | null {
+  // 1. JSON-LD Product.image (highest priority — most reliable)
+  const jsonLdScripts = document.querySelectorAll('script[type="application/ld+json"]');
+  for (const s of jsonLdScripts) {
+    try {
+      const data = JSON.parse(s.textContent || "");
+      const img = extractImageFromJsonLd(data);
+      if (img) return img;
+    } catch { /* ignore */ }
+  }
+
+  // 2. OpenGraph / Twitter meta
   const ogImage = getMeta("og:image");
   if (ogImage) return ogImage;
   const twImage = getMeta("twitter:image");
   if (twImage) return twImage;
 
+  // 3. Product-specific selectors
+  const productSelectors = [
+    "[class*='product-image'] img",
+    "[class*='product-detail'] img",
+    "[class*='ProductImage'] img",
+    "[class*='product-gallery'] img:first-child",
+    "[class*='gallery'] img:first-child",
+    "[data-testid*='product-image'] img",
+    "[data-testid*='product'] img",
+    "[id*='product-image'] img",
+    "[id*='product'] img:first-child",
+    "main img[src]:first-of-type",
+  ];
+  for (const sel of productSelectors) {
+    try {
+      const el = document.querySelector<HTMLImageElement>(sel);
+      if (el?.src && !el.src.startsWith("data:")) return el.src;
+    } catch { /* skip */ }
+  }
+
+  // 4. <picture> / <source srcset> parsing
+  const pictures = document.querySelectorAll("picture");
+  for (const pic of pictures) {
+    // Check if this picture is inside a product area
+    const parent = pic.closest("[class*='product'], [class*='gallery'], [id*='product'], main");
+    if (!parent && pictures.length > 3) continue; // skip non-product pictures if many on page
+    const sources = pic.querySelectorAll<HTMLSourceElement>("source[srcset]");
+    for (const source of sources) {
+      const srcset = source.getAttribute("srcset");
+      if (srcset) {
+        const url = parseSrcsetLargest(srcset);
+        if (url) return url;
+      }
+    }
+    const img = pic.querySelector<HTMLImageElement>("img");
+    if (img?.src && !img.src.startsWith("data:")) return img.src;
+  }
+
+  // 5. img with srcset attribute
+  const imgWithSrcset = document.querySelector<HTMLImageElement>("img[srcset]");
+  if (imgWithSrcset) {
+    const url = parseSrcsetLargest(imgWithSrcset.getAttribute("srcset") || "");
+    if (url) return url;
+    if (imgWithSrcset.src && !imgWithSrcset.src.startsWith("data:")) return imgWithSrcset.src;
+  }
+
+  // 6. Largest image fallback (filtered)
   let largest: HTMLImageElement | null = null;
   let largestArea = 0;
   document.querySelectorAll<HTMLImageElement>("img").forEach((img) => {
-    const area = img.naturalWidth * img.naturalHeight;
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+    const area = w * h;
+    // Filter out logos/icons: too small or extreme aspect ratio
+    if (w < 200 || h < 200) return;
+    if (w / h > 3 || h / w > 3) return;
     if (area > largestArea && img.src && !img.src.startsWith("data:")) {
       largestArea = area;
       largest = img;
     }
   });
   return largest ? (largest as HTMLImageElement).src : null;
+}
+
+/** Extract the largest URL from a srcset attribute */
+function parseSrcsetLargest(srcset: string): string | null {
+  const entries = srcset.split(",").map((s) => s.trim()).filter(Boolean);
+  let bestUrl: string | null = null;
+  let bestWidth = 0;
+  for (const entry of entries) {
+    const parts = entry.split(/\s+/);
+    const url = parts[0];
+    if (!url || url.startsWith("data:")) continue;
+    const descriptor = parts[1] || "";
+    const widthMatch = descriptor.match(/(\d+)w/);
+    const width = widthMatch ? parseInt(widthMatch[1]) : 0;
+    if (width >= bestWidth) {
+      bestWidth = width;
+      bestUrl = url;
+    }
+  }
+  return bestUrl || (entries.length > 0 ? entries[entries.length - 1].split(/\s+/)[0] : null);
+}
+
+/** Extract image URL from JSON-LD Product data */
+function extractImageFromJsonLd(data: any): string | null {
+  if (!data) return null;
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      const img = extractImageFromJsonLd(item);
+      if (img) return img;
+    }
+    return null;
+  }
+  if (data["@graph"]) {
+    const graph = Array.isArray(data["@graph"]) ? data["@graph"] : [data["@graph"]];
+    for (const item of graph) {
+      const img = extractImageFromJsonLd(item);
+      if (img) return img;
+    }
+    return null;
+  }
+  const type = data["@type"];
+  const isProduct = type === "Product" || type === "ProductGroup" ||
+    (Array.isArray(type) && (type.includes("Product") || type.includes("ProductGroup")));
+  if (!isProduct) return null;
+  if (data.image) {
+    if (typeof data.image === "string") return data.image;
+    if (Array.isArray(data.image) && data.image.length > 0) {
+      return typeof data.image[0] === "string" ? data.image[0] : data.image[0]?.url || null;
+    }
+    if (data.image.url) return data.image.url;
+  }
+  return null;
 }
 
 function scrapeTitle(): string {
@@ -89,6 +204,8 @@ function scrapePrice(): string | null {
   const priceSelectors = [
     "[data-price]",
     "[data-testid*='price' i]",
+    "[data-testid*='current-price' i]",
+    "[data-qa*='price' i]",
     "[id*='price' i]",
     "[class*='product-price'] [class*='current']",
     "[class*='product-price'] [class*='sale']",
@@ -97,11 +214,14 @@ function scrapePrice(): string | null {
     "[class*='productPrice']",
     "[class*='price-current']",
     "[class*='price--current']",
+    "[class*='price__amount']",
     "[class*='sale-price']",
     "[class*='salePrice']",
     "[class*='current-price']",
     "[class*='Price'] [class*='current']",
     "[class*='Price'] [class*='sale']",
+    "[class*='money']",
+    "[class*='amount']",
     ".price .now",
     ".price-box .price",
     "[class*='price'] [class*='now']",
@@ -130,7 +250,7 @@ function scrapePrice(): string | null {
 
   // 5. Broad attribute fallback (for modern component-based storefronts)
   const fallbackNodes = document.querySelectorAll<HTMLElement>(
-    "[data-price], [data-testid*='price' i], [aria-label*='price' i], [class*='price' i], [id*='price' i]"
+    "[data-price], [data-testid*='price' i], [aria-label*='price' i], [class*='price' i], [id*='price' i], [class*='money' i], [class*='amount' i]"
   );
   for (const node of Array.from(fallbackNodes).slice(0, 120)) {
     const candidate = [
@@ -142,6 +262,31 @@ function scrapePrice(): string | null {
       .trim();
     if (!candidate) continue;
     const cleaned = cleanPrice(candidate);
+    if (cleaned) return cleaned;
+  }
+
+  // 6. aria-label scanning on any element
+  const ariaNodes = document.querySelectorAll<HTMLElement>("[aria-label]");
+  for (const node of Array.from(ariaNodes).slice(0, 60)) {
+    const label = node.getAttribute("aria-label") || "";
+    if (/price|pris|prix|preis|precio/i.test(label)) {
+      const cleaned = cleanPrice(label);
+      if (cleaned) return cleaned;
+      const text = node.textContent?.trim();
+      if (text) {
+        const fromText = cleanPrice(text);
+        if (fromText) return fromText;
+      }
+    }
+  }
+
+  // 7. Short text nodes matching price regex (role="text" or small elements)
+  const shortTextNodes = document.querySelectorAll<HTMLElement>("span, p, div");
+  for (const node of Array.from(shortTextNodes).slice(0, 200)) {
+    const text = node.textContent?.trim();
+    if (!text || text.length > 30 || text.length < 3) continue;
+    if (node.children.length > 2) continue; // skip containers
+    const cleaned = cleanPrice(text);
     if (cleaned) return cleaned;
   }
 
