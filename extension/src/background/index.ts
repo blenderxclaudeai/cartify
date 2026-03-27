@@ -415,7 +415,7 @@ async function handleAddToRetailerCart(payload: any): Promise<any> {
     if (sameDomain) {
       const response = await sendMessageToTab(activeTab.id, {
         type: "CARTIFY_ADD_TO_RETAILER_CART",
-        payload: { target_url: targetUrl },
+        payload: { target_url: targetUrl, variant: payload?.variant },
       });
       if (response?.ok) {
         return { ok: true, clickedCurrentPage: true };
@@ -439,14 +439,16 @@ async function handleAddToRetailerCart(payload: any): Promise<any> {
     return { ok: false, error: "Could not open retailer product page" };
   }
 
-  await chrome.storage.local.set({
-    cartify_pending_retailer_cart: {
-      tabId: openedTab.id,
-      targetUrl,
-      variant: payload?.variant || null,
-      createdAt: Date.now(),
-    },
-  });
+  // Store pending cart item keyed by tabId
+  const stored = await chrome.storage.local.get("cartify_pending_retailer_carts");
+  const pendingCarts: Record<string, any> = stored.cartify_pending_retailer_carts || {};
+  pendingCarts[String(openedTab.id)] = {
+    tabId: openedTab.id,
+    targetUrl,
+    variant: payload?.variant || null,
+    createdAt: Date.now(),
+  };
+  await chrome.storage.local.set({ cartify_pending_retailer_carts: pendingCarts });
 
   return { ok: true, openedProductTab: true };
 }
