@@ -123,8 +123,15 @@ export function CartifyApp({ mode }: CartifyAppProps) {
   const [couponsByDomain, setCouponsByDomain] = useState<Record<string, any[]>>({});
   const [couponsExpanded, setCouponsExpanded] = useState(false);
 
-  // Flatten all coupons across domains
-  const activeCoupons = Object.values(couponsByDomain).flat();
+  // Filter coupons to only show for domains that have products in the session
+  const sessionDomains = new Set(sessionItems.map((item) => item.retailer_domain).filter(Boolean));
+  const filteredCouponsByDomain: Record<string, any[]> = {};
+  for (const [domain, coupons] of Object.entries(couponsByDomain)) {
+    if (sessionDomains.has(domain)) {
+      filteredCouponsByDomain[domain] = coupons;
+    }
+  }
+  const activeCoupons = Object.values(filteredCouponsByDomain).flat();
 
   // Initialize auth + pending product
   useEffect(() => {
@@ -861,7 +868,7 @@ export function CartifyApp({ mode }: CartifyAppProps) {
             {/* Coupon banner */}
             {activeCoupons.length > 0 && (() => {
               // Calculate potential savings
-              const domainEntries = Object.entries(couponsByDomain).filter(([, coupons]) => coupons.length > 0);
+              const domainEntries = Object.entries(filteredCouponsByDomain).filter(([, coupons]) => coupons.length > 0);
               const cartByDomain: Record<string, number> = {};
               cartItems.forEach((item) => {
                 const domain = item.retailer_domain || "unknown";
