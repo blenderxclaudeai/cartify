@@ -109,6 +109,9 @@ export function CartifyApp({ mode }: CartifyAppProps) {
   // Settings state
   const [displayMode, setDisplayMode] = useState<"popup" | "sidepanel">(mode);
 
+  // Lightbox state
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+
 
   // Coupon state
   const [activeCoupons, setActiveCoupons] = useState<any[]>([]);
@@ -549,6 +552,44 @@ export function CartifyApp({ mode }: CartifyAppProps) {
     );
   };
 
+  const handleAddAllToRetailerCart = () => {
+    const currentCartItems = sessionItems.filter((i) => i.in_cart);
+    if (currentCartItems.length === 0) return;
+
+    const groups: Record<string, SessionItem[]> = {};
+    currentCartItems.forEach((item) => {
+      const domain = item.retailer_domain || "unknown";
+      if (!groups[domain]) groups[domain] = [];
+      groups[domain].push(item);
+    });
+
+    const storeCount = Object.keys(groups).length;
+    setShareToast(`Adding to ${storeCount} store${storeCount !== 1 ? "s" : ""}…`);
+
+    const allItems = Object.values(groups).flat();
+    let idx = 0;
+
+    const sendNext = () => {
+      if (idx >= allItems.length) {
+        setShareToast(`Added ${allItems.length} item${allItems.length !== 1 ? "s" : ""} to retailer carts`);
+        setTimeout(() => setShareToast(null), 3000);
+        return;
+      }
+      const item = allItems[idx];
+      chrome.runtime.sendMessage(
+        {
+          type: "CARTIFY_ADD_TO_RETAILER_CART",
+          payload: { product_url: item.product_url, retailer_domain: item.retailer_domain || undefined },
+        },
+        () => {
+          idx++;
+          setTimeout(sendNext, 500);
+        }
+      );
+    };
+    sendNext();
+  };
+
   // ── Dimensions ──
   const containerClass = mode === "popup"
     ? "w-[380px] h-[560px] flex flex-col overflow-hidden"
@@ -681,6 +722,9 @@ export function CartifyApp({ mode }: CartifyAppProps) {
     if (trailingSymbol) return trailingSymbol[0];
     return "$";
   })();
+
+
+
 
   return (
     <div className={containerClass + " relative"}>
@@ -827,41 +871,42 @@ export function CartifyApp({ mode }: CartifyAppProps) {
                       </div>
                     )}
 
-                    {/* Hover overlay */}
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-xl bg-foreground/0 opacity-0 transition-all duration-200 group-hover:bg-foreground/50 group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        onClick={() => handleTryOnSessionItem(item)}
-                        className="w-[80%] rounded-lg bg-background/95 py-2 text-[11px] font-medium text-foreground shadow-sm transition-opacity hover:opacity-90"
-                      >
-                        Try On
-                      </button>
-                      <button
-                        onClick={() => handleToggleCart(item)}
-                        className="w-[80%] rounded-lg bg-foreground/95 py-2 text-[11px] font-medium text-background shadow-sm transition-opacity hover:opacity-90"
-                      >
-                        {item.in_cart ? "Remove from Cart" : "Add to Cart"}
-                      </button>
-                      <button
-                        onClick={() => handleAddToRetailerCart(item.product_url, item.retailer_domain)}
-                        className="w-[80%] rounded-lg bg-background/95 py-2 text-[11px] font-medium text-foreground shadow-sm transition-opacity hover:opacity-90"
-                      >
-                        Retailer Cart
-                      </button>
-                      <button
-                        onClick={() => handleRemoveSessionItem(item)}
-                        className="mt-0.5 text-[10px] font-medium text-background/70 underline underline-offset-2 transition-opacity hover:text-background"
-                      >
-                        Remove
-                      </button>
-                    </div>
-
-                    {/* Cart indicator */}
-                    {item.in_cart && (
-                      <div className="absolute top-2 right-2 h-5 w-5 rounded-full bg-foreground flex items-center justify-center shadow-sm">
-                        <span className="text-[9px] text-background">✓</span>
+                    {/* Hover overlay — 3 icon buttons */}
+                    <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-foreground/0 opacity-0 transition-all duration-200 group-hover:bg-foreground/40 group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center gap-3">
+                        {/* Try On (hanger) */}
+                        <button
+                          onClick={() => handleTryOnSessionItem(item)}
+                          className="flex h-9 w-9 items-center justify-center rounded-full bg-background/90 text-foreground shadow-md transition-transform hover:scale-110"
+                          title="Try On"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 2a3 3 0 0 0-3 3c0 1.5 1.5 3 3 3s3-1.5 3-3a3 3 0 0 0-3-3z"/>
+                            <path d="M2 20l4-4c1.5-1.5 3.5-2 5.5-2h1c2 0 4 .5 5.5 2l4 4"/>
+                          </svg>
+                        </button>
+                        {/* Remove / Toggle cart (trash or minus) */}
+                        <button
+                          onClick={() => item.in_cart ? handleToggleCart(item) : handleRemoveSessionItem(item)}
+                          className="flex h-9 w-9 items-center justify-center rounded-full bg-background/90 text-foreground shadow-md transition-transform hover:scale-110"
+                          title={item.in_cart ? "Remove from Cart" : "Remove"}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                          </svg>
+                        </button>
+                        {/* Expand (maximize) */}
+                        <button
+                          onClick={() => item.product_image && setLightboxImage(item.product_image)}
+                          className="flex h-9 w-9 items-center justify-center rounded-full bg-background/90 text-foreground shadow-md transition-transform hover:scale-110"
+                          title="Enlarge"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+                          </svg>
+                        </button>
                       </div>
-                    )}
-
+                    </div>
 
                     {/* Product info */}
                     <div className="mt-1.5 px-0.5">
@@ -1105,95 +1150,90 @@ export function CartifyApp({ mode }: CartifyAppProps) {
         )}
       </div>
 
-      {/* ── Session summary bar ── */}
+      {/* ── Session summary bar (compact) ── */}
       {screen === "session" && sessionItems.length > 0 && (
-        <div className="shrink-0 border-t border-border bg-background px-5 py-3">
-          <div className="space-y-2">
-            {/* Stats row */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="text-[12px] text-muted-foreground">
-                  {sessionItems.length} item{sessionItems.length !== 1 ? "s" : ""}
-                </span>
-                {cartItems.length > 0 && (
-                  <span className="text-[12px] text-muted-foreground">
-                    {cartItems.length} in cart
-                  </span>
-                )}
-              </div>
-              {sessionTotal > 0 && (
-                <p className="text-[15px] font-semibold text-foreground tracking-tight">
-                  {currencySymbol}{sessionTotal.toFixed(2)}
-                </p>
-              )}
-            </div>
-
-            {/* Savings hint — show when cart has items */}
-            {cartItems.length > 0 && cartTotal > 0 && (
-              <div className="flex items-center justify-between rounded-lg bg-secondary/60 px-3 py-2">
-                <p className="text-[11px] text-muted-foreground">
-                  Cart total
-                </p>
-                <p className="text-[12px] font-semibold text-foreground">
-                  {currencySymbol}{cartTotal.toFixed(2)}
-                </p>
-              </div>
-            )}
-
-            {itemsMissingPrice > 0 && (
-              <p className="text-center text-[10px] text-muted-foreground">
-                {itemsMissingPrice} item{itemsMissingPrice !== 1 ? "s" : ""} missing detectable price
-              </p>
-            )}
-
-            {/* Savings from coupons */}
-            {activeCoupons.length > 0 && (
-              <p className="text-center text-[11px] font-medium text-muted-foreground">
-                {activeCoupons.length} deal{activeCoupons.length !== 1 ? "s" : ""} available — save more at checkout
-              </p>
-            )}
+        <div className="shrink-0 border-t border-border bg-background px-4 py-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-muted-foreground">
+              {sessionItems.length} item{sessionItems.length !== 1 ? "s" : ""}
+              {cartItems.length > 0 && ` · ${cartItems.length} in cart`}
+            </span>
+            {cartTotal > 0 ? (
+              <span className="text-[11px] font-semibold text-foreground">
+                {currencySymbol}{cartTotal.toFixed(2)}
+              </span>
+            ) : sessionTotal > 0 ? (
+              <span className="text-[11px] font-semibold text-foreground">
+                {currencySymbol}{sessionTotal.toFixed(2)}
+              </span>
+            ) : null}
           </div>
+          {cartItems.length > 0 && (
+            <button
+              onClick={handleAddAllToRetailerCart}
+              className="mt-1.5 w-full rounded-lg bg-foreground py-1.5 text-[10px] font-medium text-background transition-opacity hover:opacity-80"
+            >
+              Add all to retailer carts
+            </button>
+          )}
         </div>
       )}
 
-      {/* ── Fixed bottom nav ── */}
-      <div className="shrink-0 border-t">
-        <nav className="flex items-center justify-around px-2 py-2.5">
+      {/* ── Fixed bottom nav (icons only) ── */}
+      <div className="shrink-0 border-t border-border">
+        <nav className="flex items-center justify-around px-2 py-2">
+          {/* Session — clock icon */}
           <button
             onClick={() => setScreen("session")}
-            className={`text-[12px] font-medium tracking-tight transition-colors ${
-              screen === "session"
-                ? "text-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
+            className={`p-2 transition-colors ${screen === "session" ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            title="Session"
           >
-            Session
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+            </svg>
           </button>
+          {/* Showroom — grid icon */}
           <button
             onClick={() => setScreen("showroom")}
-            className={`text-[12px] font-medium tracking-tight transition-colors ${
-              screen === "showroom"
-                ? "text-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
+            className={`p-2 transition-colors ${screen === "showroom" ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            title="Showroom"
           >
-            Showroom
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+            </svg>
           </button>
+          {/* Profile — user icon */}
           <button
             onClick={() => setScreen("profile")}
-            className={`text-[12px] font-medium tracking-tight transition-colors ${
-              screen === "profile"
-                ? "text-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
+            className={`p-2 transition-colors ${screen === "profile" ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            title="Profile"
           >
-            Profile
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+            </svg>
           </button>
         </nav>
-        <p className="text-[9px] text-muted-foreground/50 text-center pb-2">
-          We may earn affiliate commission from purchases.
-        </p>
       </div>
+
+      {/* ── Image Lightbox ── */}
+      {lightboxImage && (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center bg-foreground/80 backdrop-blur-sm"
+          onClick={() => setLightboxImage(null)}
+        >
+          <div className="relative max-h-[90%] max-w-[90%]" onClick={(e) => e.stopPropagation()}>
+            <img src={lightboxImage} alt="Product" className="max-h-[80vh] rounded-xl object-contain shadow-2xl" />
+            <button
+              onClick={() => setLightboxImage(null)}
+              className="absolute -top-3 -right-3 flex h-7 w-7 items-center justify-center rounded-full bg-background text-foreground shadow-md transition-transform hover:scale-110"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
