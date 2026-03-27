@@ -1,4 +1,4 @@
-import { extractProduct, extractVariants } from "./productExtract";
+import { extractProduct, extractVariants, waitForVariantElements } from "./productExtract";
 import { isListingPage, findCardContainers, extractFromCard, extractFallbackFromLink } from "./productGrid";
 import {
   injectButton,
@@ -436,8 +436,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg?.type === "CARTIFY_EXTRACT_VARIANTS") {
-    const variants = extractVariants();
-    sendResponse({ ok: true, variants });
+    // Wait for SPA hydration before extracting variants
+    waitForVariantElements(3000).then(() => {
+      const variants = extractVariants();
+      sendResponse({ ok: true, variants });
+    });
     return true;
   }
 });

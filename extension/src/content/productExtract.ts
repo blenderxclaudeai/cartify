@@ -54,9 +54,9 @@ function scrapeImage(): string | null {
   // 4. <picture> / <source srcset> parsing
   const pictures = document.querySelectorAll("picture");
   for (const pic of pictures) {
-    // Check if this picture is inside a product area
-    const parent = pic.closest("[class*='product'], [class*='gallery'], [id*='product'], main");
-    if (!parent && pictures.length > 3) continue; // skip non-product pictures if many on page
+    // Check if this picture is inside a product area — relaxed threshold
+    const parent = pic.closest("[class*='product'], [class*='gallery'], [id*='product'], main, article, [class*='detail'], [class*='hero']");
+    if (!parent && pictures.length > 5) continue; // skip non-product pictures only if many on page
     const sources = pic.querySelectorAll<HTMLSourceElement>("source[srcset]");
     for (const source of sources) {
       const srcset = source.getAttribute("srcset");
@@ -66,7 +66,11 @@ function scrapeImage(): string | null {
       }
     }
     const img = pic.querySelector<HTMLImageElement>("img");
+    // Check currentSrc first (reflects actually-loaded source for lazy images)
+    if (img?.currentSrc && !img.currentSrc.startsWith("data:")) return img.currentSrc;
     if (img?.src && !img.src.startsWith("data:")) return img.src;
+    // Check data-src for lazy-loaded images in picture elements
+    if (img?.dataset.src && !img.dataset.src.startsWith("data:")) return img.dataset.src;
   }
 
   // 5. img with srcset attribute
@@ -408,6 +412,35 @@ export interface ProductVariants {
   colors: string[];
 }
 
+/** Poll DOM for up to `timeoutMs` looking for size/color variant containers */
+export async function waitForVariantElements(timeoutMs = 3000): Promise<void> {
+  const POLL_INTERVAL = 500;
+  const deadline = Date.now() + timeoutMs;
+
+  const variantSelectors = [
+    "select[name*='size' i]", "select[id*='size' i]",
+    "[class*='size' i][class*='selector' i]", "[class*='size' i][class*='option' i]",
+    "[class*='size' i][class*='picker' i]", "[data-testid*='size' i]",
+    "[role='radiogroup'][aria-label*='size' i]",
+    "[class*='size' i] button", "[class*='size' i] li", "[class*='size' i] a",
+    "[aria-label*='size' i] button",
+    "select[name*='color' i]", "select[name*='colour' i]",
+    "[class*='color' i][class*='selector' i]", "[class*='colour' i][class*='selector' i]",
+    "[class*='color' i][class*='picker' i]", "[data-testid*='color' i]",
+    "[role='radiogroup'][aria-label*='color' i]",
+    "[class*='color' i] button", "[class*='colour' i] button",
+  ];
+
+  while (Date.now() < deadline) {
+    for (const sel of variantSelectors) {
+      try {
+        if (document.querySelector(sel)) return;
+      } catch { /* invalid selector */ }
+    }
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+  }
+}
+
 /** Extract available variant options (sizes, colors) from JSON-LD, microdata, and DOM */
 export function extractVariants(): ProductVariants {
   const sizes = new Set<string>();
@@ -550,17 +583,28 @@ function extractSizesFromDom(sizes: Set<string>): void {
 
   // Button/radio groups labeled "size"
   const sizeContainers = document.querySelectorAll<HTMLElement>(
-    "[class*='size' i][class*='selector' i], [class*='size' i][class*='option' i], [class*='size' i][class*='picker' i], [data-testid*='size' i], fieldset[class*='size' i], [role='radiogroup'][aria-label*='size' i]"
+    "[class*='size' i][class*='selector' i], [class*='size' i][class*='option' i], [class*='size' i][class*='picker' i], [data-testid*='size' i], fieldset[class*='size' i], [role='radiogroup'][aria-label*='size' i], [class*='size' i]"
   );
   for (const container of sizeContainers) {
-    const btns = container.querySelectorAll<HTMLElement>("button, [role='radio'], label, a[data-value]");
+    const btns = container.querySelectorAll<HTMLElement>("button, [role='radio'], label, a[data-value], li, a");
     for (const btn of btns) {
       const text = (btn.textContent || "").trim();
-      if (text && text.length < 20 && !/size guide|storleksguide/i.test(text)) {
-        sizes.add(text);
+      const dataValue = btn.getAttribute("data-value")?.trim();
+      const val = dataValue || text;
+      if (val && val.length < 20 && !/size guide|storleksguide|storlek|størrelse/i.test(val)) {
+        sizes.add(val);
       }
     }
     if (sizes.size > 0) return;
+  }
+
+  // Broad fallback: any buttons/links with aria-label containing "size"
+  const sizeButtons = document.querySelectorAll<HTMLElement>("[aria-label*='size' i] button, [aria-label*='size' i] a, button[aria-label*='size' i]");
+  for (const btn of sizeButtons) {
+    const text = (btn.textContent || btn.getAttribute("aria-label") || "").trim();
+    const dataValue = btn.getAttribute("data-value")?.trim();
+    const val = dataValue || text;
+    if (val && val.length < 20) sizes.add(val);
   }
 }
 
@@ -581,20 +625,31 @@ function extractColorsFromDom(colors: Set<string>): void {
 
   // Button/radio groups labeled "color"
   const colorContainers = document.querySelectorAll<HTMLElement>(
-    "[class*='color' i][class*='selector' i], [class*='color' i][class*='option' i], [class*='colour' i][class*='selector' i], [class*='colour' i][class*='option' i], [class*='color' i][class*='picker' i], [data-testid*='color' i], [data-testid*='colour' i], fieldset[class*='color' i], [role='radiogroup'][aria-label*='color' i]"
+    "[class*='color' i][class*='selector' i], [class*='color' i][class*='option' i], [class*='colour' i][class*='selector' i], [class*='colour' i][class*='option' i], [class*='color' i][class*='picker' i], [data-testid*='color' i], [data-testid*='colour' i], fieldset[class*='color' i], [role='radiogroup'][aria-label*='color' i], [class*='color' i], [class*='colour' i]"
   );
   for (const container of colorContainers) {
-    const btns = container.querySelectorAll<HTMLElement>("button, [role='radio'], label, a[data-value]");
+    const btns = container.querySelectorAll<HTMLElement>("button, [role='radio'], label, a[data-value], li, a");
     for (const btn of btns) {
       const text = (btn.textContent || "").trim();
       const ariaLabel = btn.getAttribute("aria-label")?.trim();
       const title = btn.getAttribute("title")?.trim();
-      const val = ariaLabel || title || text;
+      const dataValue = btn.getAttribute("data-value")?.trim();
+      const val = dataValue || ariaLabel || title || text;
       if (val && val.length < 40) {
         colors.add(val);
       }
     }
     if (colors.size > 0) return;
+  }
+
+  // Broad fallback: any elements with aria-label containing "color"
+  const colorButtons = document.querySelectorAll<HTMLElement>("[aria-label*='color' i] button, [aria-label*='colour' i] button, button[aria-label*='color' i], button[aria-label*='colour' i]");
+  for (const btn of colorButtons) {
+    const ariaLabel = btn.getAttribute("aria-label")?.trim();
+    const title = btn.getAttribute("title")?.trim();
+    const dataValue = btn.getAttribute("data-value")?.trim();
+    const val = dataValue || ariaLabel || title || (btn.textContent || "").trim();
+    if (val && val.length < 40) colors.add(val);
   }
 }
 
