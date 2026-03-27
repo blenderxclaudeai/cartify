@@ -556,12 +556,40 @@ export function CartifyApp({ mode }: CartifyAppProps) {
     );
   };
 
-  const handleAddAllToRetailerCart = () => {
+  const startVariantFlow = () => {
     const currentCartItems = sessionItems.filter((i) => i.in_cart);
     if (currentCartItems.length === 0) return;
+    setVariantSelections({});
+    setVariantFlowIndex(0);
+    setVariantFlow(currentCartItems);
+  };
+
+  const handleVariantNext = () => {
+    if (!variantFlow) return;
+    if (variantFlowIndex < variantFlow.length - 1) {
+      setVariantFlowIndex(variantFlowIndex + 1);
+    } else {
+      // Done — proceed with adding all to retailer carts
+      executeAddAllToRetailerCart();
+    }
+  };
+
+  const handleVariantSkip = () => {
+    if (!variantFlow) return;
+    if (variantFlowIndex < variantFlow.length - 1) {
+      setVariantFlowIndex(variantFlowIndex + 1);
+    } else {
+      executeAddAllToRetailerCart();
+    }
+  };
+
+  const executeAddAllToRetailerCart = () => {
+    if (!variantFlow) return;
+    const items = variantFlow;
+    setVariantFlow(null);
 
     const groups: Record<string, SessionItem[]> = {};
-    currentCartItems.forEach((item) => {
+    items.forEach((item) => {
       const domain = item.retailer_domain || "unknown";
       if (!groups[domain]) groups[domain] = [];
       groups[domain].push(item);
@@ -575,15 +603,20 @@ export function CartifyApp({ mode }: CartifyAppProps) {
 
     const sendNext = () => {
       if (idx >= allItems.length) {
-        setShareToast(`Added ${allItems.length} item${allItems.length !== 1 ? "s" : ""} to retailer carts`);
+        setShareToast(`Added ${allItems.length} item${allItems.length !== 1 ? "s" : ""} to carts`);
         setTimeout(() => setShareToast(null), 3000);
         return;
       }
       const item = allItems[idx];
+      const variant = variantSelections[item.id];
       chrome.runtime.sendMessage(
         {
           type: "CARTIFY_ADD_TO_RETAILER_CART",
-          payload: { product_url: item.product_url, retailer_domain: item.retailer_domain || undefined },
+          payload: {
+            product_url: item.product_url,
+            retailer_domain: item.retailer_domain || undefined,
+            variant: variant && (variant.size || variant.color) ? variant : undefined,
+          },
         },
         () => {
           idx++;
