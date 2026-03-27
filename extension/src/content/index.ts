@@ -268,9 +268,7 @@ function evaluatePage() {
       if (loggedIn) {
         removeLoginPill();
         storeDetectedProduct();
-        if (!document.getElementById("cartify-tryon-btn")) {
-          injectButton(doTryOn);
-        }
+        // No floating "Try On" button — side panel handles it
         // Also inject card buttons on any product grids (e.g. "related products")
         setupListingButtons();
       } else {

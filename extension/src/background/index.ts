@@ -443,6 +443,7 @@ async function handleAddToRetailerCart(payload: any): Promise<any> {
     cartify_pending_retailer_cart: {
       tabId: openedTab.id,
       targetUrl,
+      variant: payload?.variant || null,
       createdAt: Date.now(),
     },
   });
