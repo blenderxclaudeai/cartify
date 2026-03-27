@@ -1,4 +1,4 @@
-import { extractProduct } from "./productExtract";
+import { extractProduct, extractVariants } from "./productExtract";
 import { isListingPage, findCardContainers, extractFromCard, extractFallbackFromLink } from "./productGrid";
 import {
   injectButton,
@@ -429,11 +429,17 @@ function tryAddToRetailerCart(targetUrl?: string, variant?: { size?: string; col
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg?.type !== "CARTIFY_ADD_TO_RETAILER_CART") return;
+  if (msg?.type === "CARTIFY_ADD_TO_RETAILER_CART") {
+    const result = tryAddToRetailerCart(msg?.payload?.target_url, msg?.payload?.variant);
+    sendResponse(result);
+    return true;
+  }
 
-  const result = tryAddToRetailerCart(msg?.payload?.target_url, msg?.payload?.variant);
-  sendResponse(result);
-  return true;
+  if (msg?.type === "CARTIFY_EXTRACT_VARIANTS") {
+    const variants = extractVariants();
+    sendResponse({ ok: true, variants });
+    return true;
+  }
 });
 
 function doTryOn() {
