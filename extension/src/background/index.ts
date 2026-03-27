@@ -611,39 +611,44 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (!headers) { sendResponse({ ok: false }); return; }
       try {
         const domain = msg.domain;
+        let domainCoupons: any[] = [];
+
         const res = await fetchWithAutoRefresh(
           `${SUPABASE_URL}/rest/v1/retailer_coupons?domain=eq.${encodeURIComponent(domain)}&is_active=eq.true&select=code,description,discount_type,discount_value,min_purchase`,
           { headers }
         );
         const coupons = await res.json();
         if (Array.isArray(coupons) && coupons.length > 0) {
-          await chrome.storage.local.set({ cartify_active_coupons: coupons });
-          sendResponse({ ok: true, count: coupons.length });
-          return;
+          domainCoupons = coupons;
+        } else {
+          // No cached coupons — try scraping via edge function
+          try {
+            const scrapeRes = await fetch(`${SUPABASE_URL}/functions/v1/scrape-coupons`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                apikey: SUPABASE_ANON_KEY,
+              },
+              body: JSON.stringify({ domain }),
+            });
+            const scrapeText = await scrapeRes.text();
+            let scraped: any;
+            try { scraped = JSON.parse(scrapeText); } catch { scraped = {}; }
+            if (Array.isArray(scraped?.coupons) && scraped.coupons.length > 0) {
+              domainCoupons = scraped.coupons;
+            }
+          } catch { /* scraping failed, continue */ }
         }
 
-        // No cached coupons — try scraping via edge function
-        try {
-          const scrapeRes = await fetch(`${SUPABASE_URL}/functions/v1/scrape-coupons`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              apikey: SUPABASE_ANON_KEY,
-            },
-            body: JSON.stringify({ domain }),
-          });
-          const scrapeText = await scrapeRes.text();
-          let scraped: any;
-          try { scraped = JSON.parse(scrapeText); } catch { scraped = {}; }
-          if (Array.isArray(scraped?.coupons) && scraped.coupons.length > 0) {
-            await chrome.storage.local.set({ cartify_active_coupons: scraped.coupons });
-            sendResponse({ ok: true, count: scraped.coupons.length });
-            return;
-          }
-        } catch { /* scraping failed, continue */ }
-
-        await chrome.storage.local.remove("cartify_active_coupons");
-        sendResponse({ ok: true, count: 0 });
+        // Merge into per-domain coupon map (preserves other domains)
+        const stored = await chrome.storage.local.get("cartify_coupons_by_domain");
+        const couponMap: Record<string, any[]> = stored.cartify_coupons_by_domain || {};
+        if (domainCoupons.length > 0) {
+          couponMap[domain] = domainCoupons;
+        }
+        // Don't remove other domains — accumulate across session
+        await chrome.storage.local.set({ cartify_coupons_by_domain: couponMap });
+        sendResponse({ ok: true, count: domainCoupons.length });
       } catch {
         sendResponse({ ok: false });
       }
