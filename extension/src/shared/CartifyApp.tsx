@@ -120,8 +120,11 @@ export function CartifyApp({ mode }: CartifyAppProps) {
   const [variantsLoading, setVariantsLoading] = useState(false);
 
   // Coupon state
-  const [activeCoupons, setActiveCoupons] = useState<any[]>([]);
+  const [couponsByDomain, setCouponsByDomain] = useState<Record<string, any[]>>({});
   const [couponsExpanded, setCouponsExpanded] = useState(false);
+
+  // Flatten all coupons across domains
+  const activeCoupons = Object.values(couponsByDomain).flat();
 
   // Initialize auth + pending product
   useEffect(() => {
