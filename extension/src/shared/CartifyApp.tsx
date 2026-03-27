@@ -868,7 +868,7 @@ export function CartifyApp({ mode }: CartifyAppProps) {
             {/* Coupon banner */}
             {activeCoupons.length > 0 && (() => {
               // Calculate potential savings
-              const domainEntries = Object.entries(couponsByDomain).filter(([, coupons]) => coupons.length > 0);
+              const domainEntries = Object.entries(filteredCouponsByDomain).filter(([, coupons]) => coupons.length > 0);
               const cartByDomain: Record<string, number> = {};
               cartItems.forEach((item) => {
                 const domain = item.retailer_domain || "unknown";
