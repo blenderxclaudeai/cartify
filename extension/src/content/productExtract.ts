@@ -248,6 +248,201 @@ function detectCategory(): string | undefined {
   return undefined;
 }
 
+export interface ProductVariants {
+  sizes: string[];
+  colors: string[];
+}
+
+/** Extract available variant options (sizes, colors) from JSON-LD, microdata, and DOM */
+export function extractVariants(): ProductVariants {
+  const sizes = new Set<string>();
+  const colors = new Set<string>();
+
+  // 1. JSON-LD: Product → offers → availability variants
+  const jsonLdScripts = document.querySelectorAll('script[type="application/ld+json"]');
+  for (const s of jsonLdScripts) {
+    try {
+      const data = JSON.parse(s.textContent || "");
+      extractVariantsFromJsonLd(data, sizes, colors);
+    } catch { /* ignore */ }
+  }
+
+  // 2. DOM: common size selectors
+  if (sizes.size === 0) {
+    extractSizesFromDom(sizes);
+  }
+
+  // 3. DOM: common color selectors
+  if (colors.size === 0) {
+    extractColorsFromDom(colors);
+  }
+
+  return {
+    sizes: Array.from(sizes),
+    colors: Array.from(colors),
+  };
+}
+
+function extractVariantsFromJsonLd(data: any, sizes: Set<string>, colors: Set<string>): void {
+  if (!data) return;
+
+  if (Array.isArray(data)) {
+    data.forEach((d) => extractVariantsFromJsonLd(d, sizes, colors));
+    return;
+  }
+
+  if (data["@graph"]) {
+    const graph = Array.isArray(data["@graph"]) ? data["@graph"] : [data["@graph"]];
+    graph.forEach((d: any) => extractVariantsFromJsonLd(d, sizes, colors));
+    return;
+  }
+
+  const type = data["@type"];
+  const isProduct = type === "Product" || type === "ProductGroup" ||
+    (Array.isArray(type) && (type.includes("Product") || type.includes("ProductGroup")));
+
+  if (!isProduct) return;
+
+  // Check hasVariant (schema.org ProductGroup pattern)
+  if (data.hasVariant) {
+    const variants = Array.isArray(data.hasVariant) ? data.hasVariant : [data.hasVariant];
+    for (const v of variants) {
+      if (v.size) sizes.add(String(v.size).trim());
+      if (v.color) colors.add(String(v.color).trim());
+      // additionalProperty pattern
+      if (v.additionalProperty) {
+        const props = Array.isArray(v.additionalProperty) ? v.additionalProperty : [v.additionalProperty];
+        for (const p of props) {
+          const name = (p.name || "").toLowerCase();
+          const val = String(p.value || "").trim();
+          if (!val) continue;
+          if (name.includes("size") || name === "taille" || name === "größe" || name === "storlek") sizes.add(val);
+          if (name.includes("color") || name.includes("colour") || name === "couleur" || name === "farbe" || name === "färg") colors.add(val);
+        }
+      }
+    }
+  }
+
+  // Check offers for variant info
+  if (data.offers) {
+    const offers = Array.isArray(data.offers) ? data.offers : [data.offers];
+    for (const offer of offers) {
+      if (offer.size) sizes.add(String(offer.size).trim());
+      if (offer.color) colors.add(String(offer.color).trim());
+      // itemOffered may contain variant info
+      if (offer.itemOffered) {
+        const item = offer.itemOffered;
+        if (item.size) sizes.add(String(item.size).trim());
+        if (item.color) colors.add(String(item.color).trim());
+      }
+    }
+  }
+
+  // Direct size/color on Product
+  if (data.size) {
+    const s = Array.isArray(data.size) ? data.size : [data.size];
+    s.forEach((v: any) => sizes.add(String(v).trim()));
+  }
+  if (data.color) {
+    const c = Array.isArray(data.color) ? data.color : [data.color];
+    c.forEach((v: any) => colors.add(String(v).trim()));
+  }
+
+  // additionalProperty on Product level
+  if (data.additionalProperty) {
+    const props = Array.isArray(data.additionalProperty) ? data.additionalProperty : [data.additionalProperty];
+    for (const p of props) {
+      const name = (p.name || "").toLowerCase();
+      const val = String(p.value || "").trim();
+      if (!val) continue;
+      if (name.includes("size")) sizes.add(val);
+      if (name.includes("color") || name.includes("colour")) colors.add(val);
+    }
+  }
+}
+
+const SIZE_SELECTORS = [
+  "select[name*='size' i]",
+  "select[id*='size' i]",
+  "select[data-testid*='size' i]",
+  "select[aria-label*='size' i]",
+  "[data-testid*='size' i] select",
+  "[class*='size' i] select",
+];
+
+const COLOR_SELECTORS = [
+  "select[name*='color' i]", "select[name*='colour' i]",
+  "select[id*='color' i]", "select[id*='colour' i]",
+  "select[aria-label*='color' i]", "select[aria-label*='colour' i]",
+  "[data-testid*='color' i] select", "[data-testid*='colour' i] select",
+  "[class*='color' i] select", "[class*='colour' i] select",
+];
+
+function extractSizesFromDom(sizes: Set<string>): void {
+  // Select dropdowns
+  for (const sel of SIZE_SELECTORS) {
+    const elems = document.querySelectorAll<HTMLSelectElement>(sel);
+    for (const select of elems) {
+      for (const opt of select.options) {
+        const val = opt.text.trim();
+        if (val && !opt.disabled && val !== "" && !/select|choose|pick|välj|wähle/i.test(val)) {
+          sizes.add(val);
+        }
+      }
+      if (sizes.size > 0) return;
+    }
+  }
+
+  // Button/radio groups labeled "size"
+  const sizeContainers = document.querySelectorAll<HTMLElement>(
+    "[class*='size' i][class*='selector' i], [class*='size' i][class*='option' i], [class*='size' i][class*='picker' i], [data-testid*='size' i], fieldset[class*='size' i], [role='radiogroup'][aria-label*='size' i]"
+  );
+  for (const container of sizeContainers) {
+    const btns = container.querySelectorAll<HTMLElement>("button, [role='radio'], label, a[data-value]");
+    for (const btn of btns) {
+      const text = (btn.textContent || "").trim();
+      if (text && text.length < 20 && !/size guide|storleksguide/i.test(text)) {
+        sizes.add(text);
+      }
+    }
+    if (sizes.size > 0) return;
+  }
+}
+
+function extractColorsFromDom(colors: Set<string>): void {
+  // Select dropdowns
+  for (const sel of COLOR_SELECTORS) {
+    const elems = document.querySelectorAll<HTMLSelectElement>(sel);
+    for (const select of elems) {
+      for (const opt of select.options) {
+        const val = opt.text.trim();
+        if (val && !opt.disabled && val !== "" && !/select|choose|pick|välj|wähle/i.test(val)) {
+          colors.add(val);
+        }
+      }
+      if (colors.size > 0) return;
+    }
+  }
+
+  // Button/radio groups labeled "color"
+  const colorContainers = document.querySelectorAll<HTMLElement>(
+    "[class*='color' i][class*='selector' i], [class*='color' i][class*='option' i], [class*='colour' i][class*='selector' i], [class*='colour' i][class*='option' i], [class*='color' i][class*='picker' i], [data-testid*='color' i], [data-testid*='colour' i], fieldset[class*='color' i], [role='radiogroup'][aria-label*='color' i]"
+  );
+  for (const container of colorContainers) {
+    const btns = container.querySelectorAll<HTMLElement>("button, [role='radio'], label, a[data-value]");
+    for (const btn of btns) {
+      const text = (btn.textContent || "").trim();
+      const ariaLabel = btn.getAttribute("aria-label")?.trim();
+      const title = btn.getAttribute("title")?.trim();
+      const val = ariaLabel || title || text;
+      if (val && val.length < 40) {
+        colors.add(val);
+      }
+    }
+    if (colors.size > 0) return;
+  }
+}
+
 export function extractProduct(): ProductData {
   return {
     product_url: location.href,
