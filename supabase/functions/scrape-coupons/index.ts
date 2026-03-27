@@ -26,19 +26,19 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
+    const cleanDomain = domain.replace(/^www\./, "");
+
     // Check for fresh cached coupons (scraped within last 24h)
     const { data: cached } = await supabase
       .from("retailer_coupons")
       .select("code,description,discount_type,discount_value,min_purchase,scraped_at")
-      .eq("domain", domain)
+      .eq("domain", cleanDomain)
       .eq("is_active", true);
 
     if (cached && cached.length > 0) {
-      // Check if any scraped coupons are fresh
       const hasFreshScraped = cached.some(
         (c: any) => c.scraped_at && Date.now() - new Date(c.scraped_at).getTime() < CACHE_TTL_MS
       );
-      // Also include manually-added coupons (no scraped_at)
       const manualCoupons = cached.filter((c: any) => !c.scraped_at);
 
       if (hasFreshScraped || manualCoupons.length > 0) {
@@ -49,47 +49,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Scrape coupon aggregator sites
-    const cleanDomain = domain.replace(/^www\./, "");
-    const domainNoTld = cleanDomain.split(".")[0];
-
-    const aggregatorUrls = [
-      `https://www.retailmenot.com/view/${cleanDomain}`,
-      `https://couponfollow.com/site/${cleanDomain}`,
-      `https://www.coupons.com/coupon-codes/${domainNoTld}`,
-    ];
-
-    const userAgent =
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-
-    let combinedHtml = "";
-
-    for (const url of aggregatorUrls) {
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 8000);
-        const res = await fetch(url, {
-          headers: { "User-Agent": userAgent },
-          signal: controller.signal,
-        });
-        clearTimeout(timeout);
-        if (res.ok) {
-          const text = await res.text();
-          // Take a reasonable chunk to avoid token limits
-          combinedHtml += `\n--- SOURCE: ${url} ---\n` + text.slice(0, 30000);
-        }
-      } catch {
-        // Skip failed fetches
-      }
-    }
-
-    if (!combinedHtml.trim()) {
-      return new Response(JSON.stringify({ coupons: [] }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // Use Lovable AI to extract coupons from HTML
+    // Use AI to discover coupons (aggregator scraping is blocked by Cloudflare)
     const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
     if (!lovableApiKey) {
       return new Response(JSON.stringify({ coupons: [] }), {
@@ -97,18 +57,21 @@ Deno.serve(async (req) => {
       });
     }
 
-    const aiPrompt = `Extract all coupon/promo codes from this HTML for the retailer "${cleanDomain}".
-Return ONLY valid JSON array. Each object must have:
-- "code": the coupon/promo code string
+    const today = new Date().toISOString().split("T")[0];
+    const aiPrompt = `List currently active and valid coupon codes and promotional discount codes for the online retailer "${cleanDomain}" as of ${today}.
+
+Return ONLY a valid JSON array. Each object must have:
+- "code": the coupon/promo code string (must be an actual code customers can enter at checkout)
 - "description": short description of the deal
 - "discount_type": "percentage" or "fixed" or "free_shipping" or "other"
 - "discount_value": the discount amount as string (e.g. "20%" or "$10") or null
 
-If no valid coupons found, return empty array [].
-Do NOT include expired coupons. Only include codes that appear to be currently active.
-
-HTML content:
-${combinedHtml.slice(0, 50000)}`;
+Rules:
+- Only include codes that are likely still active and working
+- Include well-known recurring codes (e.g. newsletter signup discounts, student discounts, seasonal codes)
+- Do NOT make up fictional codes — only include codes you have high confidence in
+- If you don't know any valid codes for this retailer, return an empty array []
+- Maximum 15 codes`;
 
     try {
       const aiRes = await fetch("https://ai.lovable.dev/api/v1/chat/completions", {
@@ -120,7 +83,7 @@ ${combinedHtml.slice(0, 50000)}`;
         body: JSON.stringify({
           model: "google/gemini-2.5-flash",
           messages: [
-            { role: "system", content: "You extract coupon codes from HTML. Return only valid JSON arrays." },
+            { role: "system", content: "You are a coupon code expert. Return only valid JSON arrays of coupon codes. Be honest — if you don't know any codes, return an empty array." },
             { role: "user", content: aiPrompt },
           ],
           response_format: { type: "json_object" },
@@ -128,6 +91,7 @@ ${combinedHtml.slice(0, 50000)}`;
       });
 
       if (!aiRes.ok) {
+        console.error("AI request failed:", aiRes.status);
         return new Response(JSON.stringify({ coupons: [] }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -140,7 +104,6 @@ ${combinedHtml.slice(0, 50000)}`;
       try {
         parsed = JSON.parse(content);
       } catch {
-        // Try to extract array from response
         const match = content.match(/\[[\s\S]*\]/);
         parsed = match ? JSON.parse(match[0]) : [];
       }
@@ -164,10 +127,10 @@ ${combinedHtml.slice(0, 50000)}`;
         .eq("domain", cleanDomain)
         .not("scraped_at", "is", null);
 
-      // Insert new scraped coupons
+      // Insert new AI-discovered coupons
       const now = new Date().toISOString();
       const expires = new Date(Date.now() + CACHE_TTL_MS).toISOString();
-      const rows = coupons.slice(0, 20).map((c: any) => ({
+      const rows = coupons.slice(0, 15).map((c: any) => ({
         domain: cleanDomain,
         code: String(c.code || "").slice(0, 50),
         description: String(c.description || "").slice(0, 200),
@@ -191,7 +154,7 @@ ${combinedHtml.slice(0, 50000)}`;
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     } catch (aiError) {
-      console.error("AI extraction error:", aiError);
+      console.error("AI discovery error:", aiError);
       return new Response(JSON.stringify({ coupons: [] }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

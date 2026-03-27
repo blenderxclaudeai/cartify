@@ -879,7 +879,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
-chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status !== "complete") return;
 
   chrome.storage.local.get("cartify_pending_retailer_carts").then(async (result) => {
@@ -893,6 +893,19 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
       return;
     }
 
+    // Skip if still on the redirect URL (haven't reached retailer yet)
+    const currentUrl = tab?.url || "";
+    if (currentUrl.includes("/functions/v1/redirect") || currentUrl.includes(SUPABASE_URL)) {
+      return; // Wait for next "complete" event when actual retailer page loads
+    }
+
+    // Verify we're on the right retailer domain
+    const targetDomain = getDomainFromUrl(pending.targetUrl);
+    const currentDomain = getDomainFromUrl(currentUrl);
+    if (targetDomain && currentDomain && targetDomain !== currentDomain) {
+      return; // Not on the retailer page yet
+    }
+
     // Inject content script programmatically to ensure it's ready
     try {
       await chrome.scripting.executeScript({
@@ -901,8 +914,8 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
       });
     } catch { /* already injected or restricted page */ }
 
-    // Initial delay to let the page and script settle
-    await new Promise((r) => setTimeout(r, 2000));
+    // Initial delay to let the page and SPA hydrate
+    await new Promise((r) => setTimeout(r, 3000));
 
     // Retry up to 3 times with 1.5s delay
     for (let attempt = 1; attempt <= 3; attempt++) {

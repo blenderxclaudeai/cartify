@@ -66,7 +66,11 @@ function scrapeImage(): string | null {
       }
     }
     const img = pic.querySelector<HTMLImageElement>("img");
+    // Check currentSrc first (reflects actually-loaded source for lazy images)
+    if (img?.currentSrc && !img.currentSrc.startsWith("data:")) return img.currentSrc;
     if (img?.src && !img.src.startsWith("data:")) return img.src;
+    // Check data-src for lazy-loaded images in picture elements
+    if (img?.dataset.src && !img.dataset.src.startsWith("data:")) return img.dataset.src;
   }
 
   // 5. img with srcset attribute
