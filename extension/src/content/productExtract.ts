@@ -408,6 +408,35 @@ export interface ProductVariants {
   colors: string[];
 }
 
+/** Poll DOM for up to `timeoutMs` looking for size/color variant containers */
+export async function waitForVariantElements(timeoutMs = 3000): Promise<void> {
+  const POLL_INTERVAL = 500;
+  const deadline = Date.now() + timeoutMs;
+
+  const variantSelectors = [
+    "select[name*='size' i]", "select[id*='size' i]",
+    "[class*='size' i][class*='selector' i]", "[class*='size' i][class*='option' i]",
+    "[class*='size' i][class*='picker' i]", "[data-testid*='size' i]",
+    "[role='radiogroup'][aria-label*='size' i]",
+    "[class*='size' i] button", "[class*='size' i] li", "[class*='size' i] a",
+    "[aria-label*='size' i] button",
+    "select[name*='color' i]", "select[name*='colour' i]",
+    "[class*='color' i][class*='selector' i]", "[class*='colour' i][class*='selector' i]",
+    "[class*='color' i][class*='picker' i]", "[data-testid*='color' i]",
+    "[role='radiogroup'][aria-label*='color' i]",
+    "[class*='color' i] button", "[class*='colour' i] button",
+  ];
+
+  while (Date.now() < deadline) {
+    for (const sel of variantSelectors) {
+      try {
+        if (document.querySelector(sel)) return;
+      } catch { /* invalid selector */ }
+    }
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+  }
+}
+
 /** Extract available variant options (sizes, colors) from JSON-LD, microdata, and DOM */
 export function extractVariants(): ProductVariants {
   const sizes = new Set<string>();
