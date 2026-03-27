@@ -250,7 +250,7 @@ function scrapePrice(): string | null {
 
   // 5. Broad attribute fallback (for modern component-based storefronts)
   const fallbackNodes = document.querySelectorAll<HTMLElement>(
-    "[data-price], [data-testid*='price' i], [aria-label*='price' i], [class*='price' i], [id*='price' i]"
+    "[data-price], [data-testid*='price' i], [aria-label*='price' i], [class*='price' i], [id*='price' i], [class*='money' i], [class*='amount' i]"
   );
   for (const node of Array.from(fallbackNodes).slice(0, 120)) {
     const candidate = [
@@ -262,6 +262,31 @@ function scrapePrice(): string | null {
       .trim();
     if (!candidate) continue;
     const cleaned = cleanPrice(candidate);
+    if (cleaned) return cleaned;
+  }
+
+  // 6. aria-label scanning on any element
+  const ariaNodes = document.querySelectorAll<HTMLElement>("[aria-label]");
+  for (const node of Array.from(ariaNodes).slice(0, 60)) {
+    const label = node.getAttribute("aria-label") || "";
+    if (/price|pris|prix|preis|precio/i.test(label)) {
+      const cleaned = cleanPrice(label);
+      if (cleaned) return cleaned;
+      const text = node.textContent?.trim();
+      if (text) {
+        const fromText = cleanPrice(text);
+        if (fromText) return fromText;
+      }
+    }
+  }
+
+  // 7. Short text nodes matching price regex (role="text" or small elements)
+  const shortTextNodes = document.querySelectorAll<HTMLElement>("span, p, div");
+  for (const node of Array.from(shortTextNodes).slice(0, 200)) {
+    const text = node.textContent?.trim();
+    if (!text || text.length > 30 || text.length < 3) continue;
+    if (node.children.length > 2) continue; // skip containers
+    const cleaned = cleanPrice(text);
     if (cleaned) return cleaned;
   }
 
