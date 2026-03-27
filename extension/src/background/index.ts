@@ -879,7 +879,18 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
       return;
     }
 
-    // Retry up to 3 times with 1.5s delay to wait for content script to load
+    // Inject content script programmatically to ensure it's ready
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ["content.js"],
+      });
+    } catch { /* already injected or restricted page */ }
+
+    // Initial delay to let the page and script settle
+    await new Promise((r) => setTimeout(r, 2000));
+
+    // Retry up to 3 times with 1.5s delay
     for (let attempt = 1; attempt <= 3; attempt++) {
       const response = await sendMessageToTab(tabId, {
         type: "CARTIFY_ADD_TO_RETAILER_CART",
@@ -902,9 +913,13 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
         await new Promise((r) => setTimeout(r, 1500));
       }
     }
-    // All retries failed — clean up
+    // All retries failed — clean up and close tab
     delete pendingCarts[String(tabId)];
     await chrome.storage.local.set({ cartify_pending_retailer_carts: pendingCarts });
+    // Close tab even on failure
+    setTimeout(() => {
+      try { chrome.tabs.remove(tabId); } catch {}
+    }, 1000);
   }).catch(() => {});
 });
 

@@ -30,17 +30,24 @@ function scrapeImage(): string | null {
     "[class*='product-detail'] img",
     "[class*='ProductImage'] img",
     "[class*='product-gallery'] img:first-child",
+    "[class*='product-hero'] img",
     "[class*='gallery'] img:first-child",
     "[data-testid*='product-image'] img",
     "[data-testid*='product'] img",
     "[id*='product-image'] img",
     "[id*='product'] img:first-child",
     "main img[src]:first-of-type",
+    // Lazy-loaded image patterns
+    "img[data-src]",
+    "img[data-lazy-src]",
   ];
   for (const sel of productSelectors) {
     try {
       const el = document.querySelector<HTMLImageElement>(sel);
-      if (el?.src && !el.src.startsWith("data:")) return el.src;
+      if (!el) continue;
+      // Check actual src first, then lazy-load attributes
+      const imgSrc = el.src || el.dataset.src || el.dataset.lazySrc || el.getAttribute("data-lazy-src") || "";
+      if (imgSrc && !imgSrc.startsWith("data:")) return imgSrc;
     } catch { /* skip */ }
   }
 

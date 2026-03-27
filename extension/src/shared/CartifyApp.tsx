@@ -1373,7 +1373,7 @@ export function CartifyApp({ mode }: CartifyAppProps) {
                 <div>
                   <label className="text-[11px] font-medium text-muted-foreground mb-1.5 block">Size</label>
                   {hasSizes ? (
-                    <div className="flex flex-wrap gap-1.5 mb-1.5">
+                    <div className="flex flex-wrap gap-1.5">
                       {ev.sizes.map((s) => (
                         <button
                           key={s}
@@ -1388,20 +1388,15 @@ export function CartifyApp({ mode }: CartifyAppProps) {
                         </button>
                       ))}
                     </div>
+                  ) : !variantsLoading ? (
+                    <p className="text-[10px] text-muted-foreground/60 italic">No size options detected</p>
                   ) : null}
-                  <input
-                    type="text"
-                    value={sel.size}
-                    onChange={(e) => setVariantSelections((prev) => ({ ...prev, [currentItem.id]: { ...sel, size: e.target.value } }))}
-                    placeholder={hasSizes ? "Or type a size…" : "e.g. M, 42, 10.5"}
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[12px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-foreground"
-                  />
                 </div>
                 {/* Color */}
                 <div>
                   <label className="text-[11px] font-medium text-muted-foreground mb-1.5 block">Color / Variant</label>
                   {hasColors ? (
-                    <div className="flex flex-wrap gap-1.5 mb-1.5">
+                    <div className="flex flex-wrap gap-1.5">
                       {ev.colors.map((c) => (
                         <button
                           key={c}
@@ -1416,14 +1411,9 @@ export function CartifyApp({ mode }: CartifyAppProps) {
                         </button>
                       ))}
                     </div>
+                  ) : !variantsLoading ? (
+                    <p className="text-[10px] text-muted-foreground/60 italic">No color options detected</p>
                   ) : null}
-                  <input
-                    type="text"
-                    value={sel.color}
-                    onChange={(e) => setVariantSelections((prev) => ({ ...prev, [currentItem.id]: { ...sel, color: e.target.value } }))}
-                    placeholder={hasColors ? "Or type a color…" : "e.g. Black, Navy Blue"}
-                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[12px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-foreground"
-                  />
                 </div>
               </div>
             </div>
