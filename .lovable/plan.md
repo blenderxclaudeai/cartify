@@ -1,64 +1,34 @@
 
 
-## Extension UI Polish and UX Improvements
+## Extension UI: Remove Try On Button, Fix Retailer Cart, Add Variant Selection
 
-### 1. Session card hover: icon-only buttons
+### What changes
 
-Replace the current text buttons ("Try On", "Remove from Cart", "Retailer Cart", "Remove") with three small icon-only circular buttons on hover:
+**1. Remove floating "Try On" button on product pages**
 
-- **Hanger icon** — Try On
-- **Trash/X icon** — Remove from Cart (or Remove item)
-- **Expand/maximize icon** — Enlarge image in a lightbox overlay
+In `extension/src/content/index.ts`, remove the `injectButton(doTryOn)` call on product-only pages (lines 246-248). The extension side panel already has try-on functionality — the floating button on the retailer page is redundant and intrusive. The login pill and listing card buttons remain unchanged.
 
-These appear in a row over the product image on hover, similar to the retailer site card buttons. Clean and non-intrusive.
+**2. Rename "Add all to retailer carts" → "Add to cart"**
 
-### 2. Remove the black checkmark badge
+In `CartifyApp.tsx` line 1176, change the button text from "Add all to retailer carts" to "Add to cart".
 
-The `✓` circle in top-right of cart items is removed. Instead, clicking the product image itself opens the product URL on the retailer site (acts as the backlink). The hover overlay with action icons sits on top, with `e.stopPropagation()` to avoid triggering the link.
+**3. Fix retailer cart automation (opens page but doesn't click)**
 
-### 3. Image lightbox
+The current flow opens the product page via the redirect edge function, then waits for `tabs.onUpdated` to fire and sends `CARTIFY_ADD_TO_RETAILER_CART` to the content script. The issue is timing — the content script may not be fully injected when the message arrives.
 
-When the user clicks the expand icon, a simple overlay within the extension shows the product image at full width with a close button. No external navigation.
+Fix in `extension/src/background/index.ts`: add a retry loop with delay (3 attempts, 1.5s apart) in the `tabs.onUpdated` listener before giving up. This gives the content script time to load and register its message listener.
 
-### 4. Disable hover overlay on retailer product pages
+**4. Size/color variant selection popup before adding to retailer cart**
 
-Currently, the content script's `injectButton` places a fixed "Try On" button on product pages — this is fine. The issue is the content script may also be injecting card-level hover buttons on product page images. The fix: on product-only pages (not listing pages), skip `setupListingButtons()` entirely and only show the fixed "Try On" button. This is already the case in `evaluatePage()` line 241 (`if (productPage && !listingPage)`), so the overlay buttons should not appear. If the user sees hover interference, it may be from the retailer's own hover — we ensure our content script does nothing extra on product pages.
+This is the biggest change. When the user clicks "Add to cart" (the bulk button), instead of immediately opening retailer pages, show a **step-through popup** inside the extension for each cart item:
 
-### 5. Bottom bar cleanup
+- **New state**: `variantFlow` — array of cart items to process, `variantFlowIndex` — current item index, `variantSelections` — map of item ID → user selections (size, color as free text)
+- **New overlay UI** in `CartifyApp.tsx`: a modal-style overlay (similar to lightbox) showing:
+  - Product image + title
+  - Two text inputs: **Size** and **Color/Variant** (free text, since reliably extracting variant options from arbitrary retailers is not feasible)
+  - "Skip" and "Next" buttons
+  - Progress indicator ("2 of 5")
+- After the user goes through all items, the extension proceeds with the existing `handleAddAllToRetailerCart` logic, but now also stores the variant selections
+- The variant info is passed to the content script as `payload.variant` so it can attempt to select size/color on the retailer page before clicking "Add to Cart"
 
-**Remove** the "We may earn affiliate commission from purchases." text entirely.
-
-**Compact the stats bar:**
-- Merge item count and cart total into a single compact row: `8 items · 8 in cart` on left, cart total on right
-- Remove the separate "Cart total" sub-row — just show one line
-- Smaller font sizes (10-11px)
-- Add a "Add all to retailer carts" button in the stats bar when cart items exist — groups items by `retailer_domain`, opens each store tab and triggers add-to-cart automation per store
-
-**Icon-only bottom nav** — replace "Session", "Showroom", "Profile" text with:
-- **Clock/list icon** — Session
-- **Grid/sparkle icon** — Showroom  
-- **User icon** — Profile
-
-Small SVG icons, active state uses `text-foreground`, inactive uses `text-muted-foreground`.
-
-### 6. Bulk "Add all to retailer carts" logic
-
-New handler `handleAddAllToRetailerCart`:
-1. Groups `cartItems` by `retailer_domain`
-2. For each domain group, sends `CARTIFY_ADD_TO_RETAILER_CART` messages sequentially (one per product URL)
-3. Shows progress toast: "Adding to 3 stores..."
-4. Shows completion toast with count
-
-### Files changed
-
-- **`extension/src/shared/CartifyApp.tsx`** — All UI changes: hover icons, remove checkmark, lightbox state, compact bottom bar, icon nav, bulk retailer cart button
-- **`extension/src/content/ui.ts`** — No changes needed (product page behavior is already correct)
-- **`extension/src/content/index.ts`** — Verify product page logic is correct (it already is)
-
-### Technical details
-
-- Lightbox is a simple `position: fixed` overlay within the extension component, not a new screen
-- Icon buttons use inline SVG (hanger, trash, maximize-2 from Lucide icon paths)
-- Nav icons use inline SVG (clock, grid, user from Lucide)
-- Bulk retailer cart iterates with 500ms delay between stores to avoid race conditions
-
+**Why free-text inputs**: Extracting size/color options
