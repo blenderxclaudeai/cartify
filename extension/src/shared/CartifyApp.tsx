@@ -859,44 +859,94 @@ export function CartifyApp({ mode }: CartifyAppProps) {
           /* ── SESSION CONTENT ── */
           <div className="py-2">
             {/* Coupon banner */}
-            {activeCoupons.length > 0 && (
-              <div className="mb-3 rounded-xl border border-border bg-secondary/40 p-3">
-                <button
-                  onClick={() => setCouponsExpanded(!couponsExpanded)}
-                  className="flex w-full items-center justify-between text-left"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-[14px]">🏷</span>
-                    <p className="text-[12px] font-medium text-foreground">
-                      {activeCoupons.length} deal{activeCoupons.length !== 1 ? "s" : ""} available
-                    </p>
-                  </div>
-                  <span className="text-[11px] text-muted-foreground">{couponsExpanded ? "▲" : "▼"}</span>
-                </button>
-                {couponsExpanded && (
-                  <div className="mt-2 space-y-2">
-                    {activeCoupons.map((c: any, idx: number) => (
-                      <div key={idx} className="flex items-center justify-between rounded-lg bg-background p-2.5 border border-border">
-                        <div>
-                          <p className="text-[11px] font-medium text-foreground">{c.description || `${c.discount_value || ""} off`}</p>
-                          {c.min_purchase && <p className="text-[9px] text-muted-foreground">Min. {c.min_purchase}</p>}
+            {activeCoupons.length > 0 && (() => {
+              // Calculate potential savings
+              const domainEntries = Object.entries(couponsByDomain).filter(([, coupons]) => coupons.length > 0);
+              const cartByDomain: Record<string, number> = {};
+              cartItems.forEach((item) => {
+                const domain = item.retailer_domain || "unknown";
+                const price = parsePriceValue(item.product_price);
+                if (price) cartByDomain[domain] = (cartByDomain[domain] || 0) + price;
+              });
+
+              let totalSavings = 0;
+              let freeShippingCount = 0;
+              for (const [domain, coupons] of domainEntries) {
+                const subtotal = cartByDomain[domain] || 0;
+                let bestDiscount = 0;
+                for (const c of coupons) {
+                  const isFreeShipping = /free.?ship|gratis.?frakt|livraison.?gratuite/i.test(c.description || "");
+                  if (isFreeShipping) { freeShippingCount++; continue; }
+                  const val = parseFloat(c.discount_value || "0");
+                  if (!val) continue;
+                  if (c.discount_type === "percentage") {
+                    bestDiscount = Math.max(bestDiscount, subtotal * val / 100);
+                  } else {
+                    bestDiscount = Math.max(bestDiscount, val);
+                  }
+                }
+                totalSavings += bestDiscount;
+              }
+
+              return (
+                <div className="mb-3 rounded-xl border border-border bg-secondary/40 p-3">
+                  <button
+                    onClick={() => setCouponsExpanded(!couponsExpanded)}
+                    className="flex w-full items-center justify-between text-left"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-[14px]">🏷</span>
+                      <p className="text-[12px] font-medium text-foreground">
+                        {activeCoupons.length} deal{activeCoupons.length !== 1 ? "s" : ""} available
+                      </p>
+                    </div>
+                    <span className="text-[11px] text-muted-foreground">{couponsExpanded ? "▲" : "▼"}</span>
+                  </button>
+                  {/* Potential savings summary */}
+                  {(totalSavings > 0 || freeShippingCount > 0) && (
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <p className="text-[10px] text-green-600 font-medium">
+                        💰 Potential savings: {totalSavings > 0 ? `${currencySymbol}${totalSavings.toFixed(2)}` : ""}
+                        {totalSavings > 0 && freeShippingCount > 0 ? " + " : ""}
+                        {freeShippingCount > 0 ? `${freeShippingCount} free shipping` : ""}
+                      </p>
+                    </div>
+                  )}
+                  {couponsExpanded && (
+                    <div className="mt-2 space-y-3">
+                      {domainEntries.map(([domain, coupons]) => (
+                        <div key={domain}>
+                          <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">{domain}</p>
+                          <div className="space-y-1.5">
+                            {coupons.map((c: any, idx: number) => (
+                              <div key={idx} className="flex items-center justify-between rounded-lg bg-background p-2.5 border border-border">
+                                <div>
+                                  <p className="text-[11px] font-medium text-foreground">{c.description || `${c.discount_value || ""} off`}</p>
+                                  {c.min_purchase && <p className="text-[9px] text-muted-foreground">Min. {c.min_purchase}</p>}
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(c.code).catch(() => {});
+                                    setShareToast(`${c.code} copied!`);
+                                    setTimeout(() => setShareToast(null), 2000);
+                                  }}
+                                  className="rounded-lg bg-foreground px-3 py-1.5 text-[10px] font-bold text-background tracking-wider transition-opacity hover:opacity-80"
+                                >
+                                  {c.code}
+                                </button>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(c.code).catch(() => {});
-                            setShareToast(`${c.code} copied!`);
-                            setTimeout(() => setShareToast(null), 2000);
-                          }}
-                          className="rounded-lg bg-foreground px-3 py-1.5 text-[10px] font-bold text-background tracking-wider transition-opacity hover:opacity-80"
-                        >
-                          {c.code}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+                      ))}
+                      <p className="text-[9px] text-muted-foreground italic text-center">
+                        Best discount auto-selected per store. Free shipping often combines with discount codes.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {sessionLoading ? (
               <div className="grid grid-cols-2 gap-3">
