@@ -431,7 +431,7 @@ function tryAddToRetailerCart(targetUrl?: string, variant?: { size?: string; col
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type !== "CARTIFY_ADD_TO_RETAILER_CART") return;
 
-  const result = tryAddToRetailerCart(msg?.payload?.target_url);
+  const result = tryAddToRetailerCart(msg?.payload?.target_url, msg?.payload?.variant);
   sendResponse(result);
   return true;
 });
