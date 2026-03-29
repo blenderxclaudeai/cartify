@@ -70,6 +70,26 @@ function storeDetectedProduct() {
   }
 }
 
+/** Pre-extract variants on product pages and store them for later use */
+function preExtractAndStoreVariants() {
+  // Wait a bit for SPA hydration before extracting
+  setTimeout(() => {
+    waitForVariantElements(3000).then(() => {
+      try {
+        const variants = extractVariants();
+        if (variants && (variants.sizes?.length || variants.colors?.length)) {
+          const productUrl = location.href;
+          chrome.runtime.sendMessage({
+            type: "CARTIFY_STORE_VARIANTS",
+            payload: { product_url: productUrl, variants },
+          }, () => { /* stored */ });
+          console.log("[Cartify] Pre-extracted variants:", variants);
+        }
+      } catch { /* ignore */ }
+    });
+  }, 1500);
+}
+
 // ── Listing page: card button handling ──
 
 const injectedCards = new WeakSet<HTMLElement>();

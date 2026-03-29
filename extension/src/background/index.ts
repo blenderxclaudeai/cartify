@@ -538,6 +538,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === "CARTIFY_STORE_VARIANTS") {
+    // Store pre-extracted variants from product page visit
+    const { product_url, variants } = msg.payload || {};
+    if (product_url && variants) {
+      const key = `cartify_variants_${btoa(product_url).slice(0, 40)}`;
+      chrome.storage.local.set({ [key]: variants }, () => {
+        sendResponse({ ok: true });
+      });
+    } else {
+      sendResponse({ ok: false });
+    }
+    return true;
+  }
+
   if (msg.type === "CARTIFY_ADD_TO_RETAILER_CART") {
     handleAddToRetailerCart(msg.payload).then(sendResponse);
     return true;
