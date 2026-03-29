@@ -517,7 +517,7 @@ export function CartifyApp({ mode }: CartifyAppProps) {
       },
     });
     setSessionItems((prev) => prev.filter((i) => i.id !== item.id));
-    chrome.storage.local.set({ cartify_session_updated_at: Date.now() });
+    setSessionDirty(true);
     // Background re-sync to keep state fresh
     setTimeout(() => loadSessionItems(false), 500);
   };
