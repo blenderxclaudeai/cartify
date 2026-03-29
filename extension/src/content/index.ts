@@ -118,14 +118,12 @@ function handleCartClick(card: HTMLElement, btn: HTMLElement) {
     return;
   }
 
-  // Extract variants NOW while user is on the page (not later in background tab)
-  let variants: ProductVariants | null = null;
-  try {
-    variants = extractVariants();
-  } catch { /* ignore */ }
+  // DON'T extract variants on listing pages — there are no variant selectors here.
+  // Variants will be pre-extracted when user visits the product page, or
+  // fetched via foreground tab fallback during the variant selection flow.
 
   chrome.runtime.sendMessage(
-    { type: "CARTIFY_ADD_TO_CART", payload, variants: variants || undefined },
+    { type: "CARTIFY_ADD_TO_CART", payload },
     (response) => {
       if (chrome.runtime.lastError) {
         showToastNotification("Extension error", "error");
