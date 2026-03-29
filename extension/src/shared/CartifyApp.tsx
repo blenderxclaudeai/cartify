@@ -119,6 +119,9 @@ export function CartifyApp({ mode }: CartifyAppProps) {
   const [extractedVariants, setExtractedVariants] = useState<Record<string, { sizes: string[]; colors: string[] }>>({});
   const [variantsLoading, setVariantsLoading] = useState(false);
 
+  // Session dirty tracking for back arrow
+  const [sessionDirty, setSessionDirty] = useState(false);
+
   // Coupon state
   const [couponsByDomain, setCouponsByDomain] = useState<Record<string, any[]>>({});
   const [couponsExpanded, setCouponsExpanded] = useState(false);
