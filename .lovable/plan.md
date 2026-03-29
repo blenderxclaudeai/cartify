@@ -1,63 +1,75 @@
 
 
-## Fix Plan: Coupons, Variants, Images, Cart Clear, Back Button
+## Fix Plan: Coupons, Variants, Price Detection — Make Everything Bulletproof
 
-### 1. Fix Coupon Discovery — Smart DB Cache + AI Fallback
+### Core Problems Identified
 
-**Problem**: The AI gateway returns 402 (credits exhausted) for every new-domain lookup, so only Zara (which has manual DB entries) shows coupons.
+1. **Coupons still only show for Zara** — The AI gateway returns 402 (credits exhausted). The edge function handles this gracefully by returning empty, but the result is: no coupons for any store except those with manual DB entries (Zara). The code is correct but credits are gone.
 
-**Fix** (`supabase/functions/scrape-coupons/index.ts`):
-- The DB-first cache check is already there and correct
-- Switch to cheapest model: `google/gemini-2.5-flash-lite` (costs far less)
-- On 402 error, log it but gracefully return whatever DB coupons exist (don't return empty)
-- Add a `scraped_at` freshness check: only call AI if no entries exist OR all entries are older than 3 days (not 24h — reduce call frequency)
-- When AI returns results, they persist in DB so all future users for that store get cached results instantly
+2. **Variant detection grabs garbage text** — `waitForVariantElements()` (lines 427-439) still uses bare selectors like `[class*='size' i] button` and `[class*='color' i] button` which match footer/legal elements. Even though `extractSizesFromDom` was fixed with blocklists, the wait function triggers early on garbage matches, and the extraction functions' compound selectors may not match the actual product variant UI on many stores.
 
-**Fix** (`extension/src/background/index.ts`):
-- The background already checks DB first, then calls edge function on miss — this is correct
-- No changes needed here
+3. **Variants extracted too late** — Currently variants are only fetched when the user clicks "Add to retailer cart" (via `CARTIFY_EXTRACT_VARIANTS`), opening a background tab. This is slow and unreliable because background tabs often don't hydrate SPAs. Should extract when the product is **added to the session cart** instead, while the user is already on the page.
 
-### 2. Fix Variant Extraction — Stop Grabbing Footer/Legal Text
+4. **Price not detected on some stores** — The price extraction chain is thorough but some stores (like Zara) use deeply nested component-based rendering that doesn't match standard selectors.
 
-**Problem**: Selectors like `[class*='size' i]` match footer containers, grabbing "försäljnings- och leveransvillkor" as a variant.
+---
 
-**Fix** (`extension/src/content/productExtract.ts`):
-- Remove the bare `[class*='size' i]` and `[class*='color' i]` from container selector lists (keep compound ones like `[class*='size' i][class*='selector' i]`)
-- Restrict container search to product areas: only match inside `main`, `article`, `form`, `[class*='product' i]`, `[id*='product' i]`
-- Add text blocklist — skip any value matching: `försäljning|villkor|leverans|retur|policy|guide|reviews|faq|kundtjänst|storleksguide|care|details|cookie|shipping|terms`
-- Add length validation: sizes must be ≤10 chars, colors ≤30 chars
-- Skip any element inside `nav`, `footer`, `header`, `[class*='policy' i]`, `[class*='delivery' i]`
+### Fix 1: Coupon Discovery — Use Google Search Scraping (No AI Credits Needed)
 
-### 3. Fix Ellos Image Extraction
+**File: `supabase/functions/scrape-coupons/index.ts`**
 
-**Problem**: Ellos uses `<picture>` elements with lazy-loaded `<source srcset>` inside non-standard containers that don't match current selectors.
+The AI approach is fundamentally broken because it depends on API credits. Replace with a **two-tier approach**:
 
-**Fix** (`extension/src/content/productExtract.ts`):
-- In the `<picture>` fallback (step 4), reduce threshold from `pictures.length > 5` to `> 8` — be even more lenient
-- Add Ellos-specific selectors: `[data-product-media] img`, `[class*='media'] picture source`
-- For the largest-image fallback, also check `img.currentSrc` before `img.src`
+- **Tier 1 (DB cache)**: Check `retailer_coupons` table — already works
+- **Tier 2 (Google search)**: When no cached coupons exist, fetch `https://www.google.com/search?q={domain}+coupon+code+{year}` with a browser-like User-Agent. Parse coupon codes from HTML snippets using regex patterns (codes near words like "code", "coupon", "off", "discount"). Store results in DB with 3-day TTL
+- **Tier 3 (AI fallback)**: If Google scrape finds nothing AND `LOVABLE_API_KEY` has credits, try AI as last resort
 
-### 4. Clear Session Cart After Bulk Add-to-Retailer-Cart
+This approach is free, doesn't depend on AI credits, and Google search results contain real coupon codes from aggregator sites.
 
-**Problem**: After adding items to the real retailer cart, the session cart should empty since the user is done.
+### Fix 2: Extract Variants When Adding to Session Cart (Not at Checkout)
 
-**Fix** (`extension/src/shared/CartifyApp.tsx`):
-- After `handleAddToRetailerCart` completes for all grouped items for a retailer, mark those session items as `in_cart: false` or remove them from the session
-- Show a toast: "Items added to {retailer} cart — session cleared"
-- Reload session items to reflect the change
+**File: `extension/src/content/index.ts`**
 
-**Fix** (`extension/src/background/index.ts`):
-- After successful add-to-cart + tab close, update the session items in the DB (set `in_cart = false` or `interaction_type = 'purchased'`)
-- Trigger `cartify_session_updated_at` so the UI refreshes
+When the user clicks "Add to Cart" on a product page, **extract variants immediately** (they're already on the page — no background tab needed) and store them alongside the session item.
 
-### 5. Add Back Arrow Button (Session Header)
+- In `handleCartClick()`: call `extractVariants()` right there and include results in the `CARTIFY_ADD_TO_CART` payload
+- Store variants in `chrome.storage.local` keyed by product URL
 
-**Problem**: No way to undo changes or go back after making cart changes.
+**File: `extension/src/background/index.ts`**
 
-**Fix** (`extension/src/shared/CartifyApp.tsx`):
-- Track a `sessionDirty` state — set to `true` when user adds/removes items from cart
-- Show a `←` arrow button to the left of the `↻` refresh button, only when `sessionDirty === true`
-- Clicking it reloads the session from DB (effectively undoing local-only changes) and resets `sessionDirty`
+- Accept variants in `CARTIFY_ADD_TO_CART` payload and store them in `chrome.storage.local` as `cartify_variants_{itemId}`
+
+**File: `extension/src/shared/CartifyApp.tsx`**
+
+- When showing the variant selection modal, check stored variants first before making a `CARTIFY_EXTRACT_VARIANTS` call
+- Only fall back to background-tab extraction if no pre-stored variants exist
+
+### Fix 3: Bulletproof Variant Extraction
+
+**File: `extension/src/content/productExtract.ts`**
+
+**A. Fix `waitForVariantElements()`** — Remove bare selectors that match footer:
+- Remove `[class*='size' i] button`, `[class*='size' i] li`, `[class*='size' i] a`
+- Remove `[class*='color' i] button`, `[class*='colour' i] button`
+- Keep only compound/specific selectors
+
+**B. Add universal fallback extraction** using the approach from the technical advisor:
+- Search for `select, [role="radiogroup"], fieldset` elements inside `PRODUCT_AREA_SELECTORS`
+- Use `aria-label` or nearby `legend/label` to determine if it's size/color
+- Extract `option, [role=radio], button, li, label` children
+- Apply existing blocklist + length validation
+- This catches stores with non-standard class names
+
+**C. Add schema.org `select` detection** — Many stores use standard `<select>` with option values inside forms. Broaden `select` detection beyond just `name*='size'` — also check `<label>` siblings.
+
+### Fix 4: Better Price Detection
+
+**File: `extension/src/content/productExtract.ts`**
+
+Add additional price selectors for modern storefronts:
+- `[data-testid*='product'] [data-testid*='price']` (nested testid pattern)
+- `[class*='price' i]:not(nav *, footer *, header *)` — restrict to non-nav areas
+- For Zara specifically: their prices are often in `span` elements with specific data attributes — the existing short-text-node fallback (step 7) should catch these, but ensure it runs on the right elements
 
 ---
 
@@ -65,8 +77,9 @@
 
 | File | Changes |
 |------|---------|
-| `supabase/functions/scrape-coupons/index.ts` | Switch to flash-lite model, extend cache TTL to 3 days, handle 402 gracefully |
-| `extension/src/content/productExtract.ts` | Restrict variant selectors to product area, add blocklist + length validation, improve Ellos image handling |
-| `extension/src/background/index.ts` | Mark session items as purchased after successful add-to-cart |
-| `extension/src/shared/CartifyApp.tsx` | Clear cart after bulk add, add back arrow with dirty tracking |
+| `supabase/functions/scrape-coupons/index.ts` | Add Google search scraping tier before AI, keep AI as fallback |
+| `extension/src/content/productExtract.ts` | Fix `waitForVariantElements` bare selectors, add universal fallback extraction, improve price detection |
+| `extension/src/content/index.ts` | Extract variants in `handleCartClick` when adding to session cart |
+| `extension/src/background/index.ts` | Store pre-extracted variants with session items |
+| `extension/src/shared/CartifyApp.tsx` | Use pre-stored variants before background-tab fallback |
 
