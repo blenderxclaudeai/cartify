@@ -1,50 +1,72 @@
 
 
-## Analysis of Recent Fixes — What's Actually Broken and Why
+## Fix Plan: Coupons, Variants, Images, Cart Clear, Back Button
 
-### 1. Coupons: Wrong AI Gateway URL (Critical — Nothing Works)
+### 1. Fix Coupon Discovery — Smart DB Cache + AI Fallback
 
-**Root cause found in edge function logs:**
-```
-DNS error: failed to lookup address information: Name or service not known
-URL: https://ai.lovable.dev/api/v1/chat/completions
-```
+**Problem**: The AI gateway returns 402 (credits exhausted) for every new-domain lookup, so only Zara (which has manual DB entries) shows coupons.
 
-The `scrape-coupons` function uses the **wrong URL**: `https://ai.lovable.dev/api/v1/chat/completions`
+**Fix** (`supabase/functions/scrape-coupons/index.ts`):
+- The DB-first cache check is already there and correct
+- Switch to cheapest model: `google/gemini-2.5-flash-lite` (costs far less)
+- On 402 error, log it but gracefully return whatever DB coupons exist (don't return empty)
+- Add a `scraped_at` freshness check: only call AI if no entries exist OR all entries are older than 3 days (not 24h — reduce call frequency)
+- When AI returns results, they persist in DB so all future users for that store get cached results instantly
 
-The working `tryon-request` function uses the **correct URL**: `https://ai.gateway.lovable.dev/v1/chat/completions`
+**Fix** (`extension/src/background/index.ts`):
+- The background already checks DB first, then calls edge function on miss — this is correct
+- No changes needed here
 
-This is a one-line fix — change the URL in `supabase/functions/scrape-coupons/index.ts` line 77.
+### 2. Fix Variant Extraction — Stop Grabbing Footer/Legal Text
 
-### 2. Variant Extraction — Likely Still Failing on SPAs
+**Problem**: Selectors like `[class*='size' i]` match footer containers, grabbing "försäljnings- och leveransvillkor" as a variant.
 
-The current code waits 3s + 1s + retries, which should help. But the `waitForVariantElements()` function only polls for elements **in the content script context**, which runs fine. The real question is whether the background tab actually hydrates SPAs at all (many sites detect background tabs and defer rendering). This needs real-world testing after the coupon fix to confirm.
+**Fix** (`extension/src/content/productExtract.ts`):
+- Remove the bare `[class*='size' i]` and `[class*='color' i]` from container selector lists (keep compound ones like `[class*='size' i][class*='selector' i]`)
+- Restrict container search to product areas: only match inside `main`, `article`, `form`, `[class*='product' i]`, `[id*='product' i]`
+- Add text blocklist — skip any value matching: `försäljning|villkor|leverans|retur|policy|guide|reviews|faq|kundtjänst|storleksguide|care|details|cookie|shipping|terms`
+- Add length validation: sizes must be ≤10 chars, colors ≤30 chars
+- Skip any element inside `nav`, `footer`, `header`, `[class*='policy' i]`, `[class*='delivery' i]`
 
-### 3. Add-to-Cart / Tab Closing
+### 3. Fix Ellos Image Extraction
 
-The redirect-skip logic (line 898) and domain matching (line 905) look correct. The 3s delay + 3 retries with `chrome.scripting.executeScript` injection is solid. Tab closing via `chrome.tabs.remove` is implemented for both success and failure paths. This should work — needs testing.
+**Problem**: Ellos uses `<picture>` elements with lazy-loaded `<source srcset>` inside non-standard containers that don't match current selectors.
 
-### 4. Ellos Images
+**Fix** (`extension/src/content/productExtract.ts`):
+- In the `<picture>` fallback (step 4), reduce threshold from `pictures.length > 5` to `> 8` — be even more lenient
+- Add Ellos-specific selectors: `[data-product-media] img`, `[class*='media'] picture source`
+- For the largest-image fallback, also check `img.currentSrc` before `img.src`
 
-The relaxed `<picture>` parsing and `currentSrc` fallback look correct. The `data-src` and `data-lazy-src` checks are in place.
+### 4. Clear Session Cart After Bulk Add-to-Retailer-Cart
+
+**Problem**: After adding items to the real retailer cart, the session cart should empty since the user is done.
+
+**Fix** (`extension/src/shared/CartifyApp.tsx`):
+- After `handleAddToRetailerCart` completes for all grouped items for a retailer, mark those session items as `in_cart: false` or remove them from the session
+- Show a toast: "Items added to {retailer} cart — session cleared"
+- Reload session items to reflect the change
+
+**Fix** (`extension/src/background/index.ts`):
+- After successful add-to-cart + tab close, update the session items in the DB (set `in_cart = false` or `interaction_type = 'purchased'`)
+- Trigger `cartify_session_updated_at` so the UI refreshes
+
+### 5. Add Back Arrow Button (Session Header)
+
+**Problem**: No way to undo changes or go back after making cart changes.
+
+**Fix** (`extension/src/shared/CartifyApp.tsx`):
+- Track a `sessionDirty` state — set to `true` when user adds/removes items from cart
+- Show a `←` arrow button to the left of the `↻` refresh button, only when `sessionDirty === true`
+- Clicking it reloads the session from DB (effectively undoing local-only changes) and resets `sessionDirty`
 
 ---
 
-## Implementation Plan
+### Files Changed
 
-### Step 1: Fix the AI gateway URL (the critical fix)
-**File:** `supabase/functions/scrape-coupons/index.ts`, line 77
-- Change `https://ai.lovable.dev/api/v1/chat/completions` → `https://ai.gateway.lovable.dev/v1/chat/completions`
-- This single fix should make coupon discovery work for all stores
-
-### Step 2: Verify no other issues
-- After fixing the URL, the full flow should work: extension requests coupons → edge function calls AI → gets coupon codes → caches in DB → returns to extension
-
----
-
-### Files changed
-
-| File | Change |
-|------|--------|
-| `supabase/functions/scrape-coupons/index.ts` | Fix AI gateway URL (line 77) |
+| File | Changes |
+|------|---------|
+| `supabase/functions/scrape-coupons/index.ts` | Switch to flash-lite model, extend cache TTL to 3 days, handle 402 gracefully |
+| `extension/src/content/productExtract.ts` | Restrict variant selectors to product area, add blocklist + length validation, improve Ellos image handling |
+| `extension/src/background/index.ts` | Mark session items as purchased after successful add-to-cart |
+| `extension/src/shared/CartifyApp.tsx` | Clear cart after bulk add, add back arrow with dirty tracking |
 
