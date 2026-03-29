@@ -119,6 +119,9 @@ export function CartifyApp({ mode }: CartifyAppProps) {
   const [extractedVariants, setExtractedVariants] = useState<Record<string, { sizes: string[]; colors: string[] }>>({});
   const [variantsLoading, setVariantsLoading] = useState(false);
 
+  // Session dirty tracking for back arrow
+  const [sessionDirty, setSessionDirty] = useState(false);
+
   // Coupon state
   const [couponsByDomain, setCouponsByDomain] = useState<Record<string, any[]>>({});
   const [couponsExpanded, setCouponsExpanded] = useState(false);
@@ -514,7 +517,7 @@ export function CartifyApp({ mode }: CartifyAppProps) {
       },
     });
     setSessionItems((prev) => prev.filter((i) => i.id !== item.id));
-    chrome.storage.local.set({ cartify_session_updated_at: Date.now() });
+    setSessionDirty(true);
     // Background re-sync to keep state fresh
     setTimeout(() => loadSessionItems(false), 500);
   };
@@ -540,6 +543,7 @@ export function CartifyApp({ mode }: CartifyAppProps) {
         i.id === item.id ? { ...i, in_cart: newInCart, interaction_type: newInCart ? "cart" : "viewed" } : i
       )
     );
+    setSessionDirty(true);
     chrome.storage.local.set({ cartify_session_updated_at: Date.now() });
     // Background re-sync to keep state fresh
     setTimeout(() => loadSessionItems(false), 500);
@@ -634,8 +638,8 @@ export function CartifyApp({ mode }: CartifyAppProps) {
 
     const sendNext = () => {
       if (idx >= allItems.length) {
-        setShareToast(`Added ${allItems.length} item${allItems.length !== 1 ? "s" : ""} to carts`);
-        setTimeout(() => setShareToast(null), 3000);
+        // All items sent — clear cart items from session
+        clearCartAfterAdd(allItems);
         return;
       }
       const item = allItems[idx];
@@ -656,6 +660,47 @@ export function CartifyApp({ mode }: CartifyAppProps) {
       );
     };
     sendNext();
+  };
+
+  const clearCartAfterAdd = async (addedItems: SessionItem[]) => {
+    const stored = await chrome.storage.local.get("cartify_auth_token");
+    const token = stored.cartify_auth_token;
+
+    if (token) {
+      // Mark items as purchased (in_cart = false, interaction_type = 'purchased')
+      for (const item of addedItems) {
+        try {
+          await fetch(`${SUPABASE_URL}/rest/v1/session_items?id=eq.${item.id}`, {
+            method: "PATCH",
+            headers: {
+              apikey: SUPABASE_ANON_KEY,
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+              Prefer: "return=minimal",
+            },
+            body: JSON.stringify({ in_cart: false, interaction_type: "purchased" }),
+          });
+        } catch { /* continue */ }
+      }
+    }
+
+    // Update local state immediately
+    setSessionItems((prev) =>
+      prev.map((i) =>
+        addedItems.some((a) => a.id === i.id)
+          ? { ...i, in_cart: false, interaction_type: "purchased" }
+          : i
+      )
+    );
+    chrome.storage.local.set({ cartify_session_updated_at: Date.now() });
+
+    const domains = [...new Set(addedItems.map((i) => i.retailer_domain).filter(Boolean))];
+    const domainText = domains.length === 1 ? domains[0] : `${domains.length} stores`;
+    setShareToast(`Items added to ${domainText} cart — session cleared`);
+    setTimeout(() => setShareToast(null), 3000);
+
+    // Reload to reflect changes
+    setTimeout(() => loadSessionItems(false), 800);
   };
 
   // ── Dimensions ──
@@ -837,13 +882,24 @@ export function CartifyApp({ mode }: CartifyAppProps) {
             <h2 className="text-[16px] font-semibold tracking-tight text-foreground">Shopping Session</h2>
             <p className="text-[11px] text-muted-foreground">Products you've interacted with today</p>
           </div>
-          <button
-            onClick={() => { void loadSessionItems(true); }}
-            className="text-muted-foreground text-[14px] px-2 py-1 rounded-lg hover:bg-secondary hover:text-foreground transition-colors"
-            title="Refresh"
-          >
-            ↻
-          </button>
+          <div className="flex items-center gap-1">
+            {sessionDirty && (
+              <button
+                onClick={() => { setSessionDirty(false); void loadSessionItems(true); }}
+                className="text-muted-foreground text-[14px] px-2 py-1 rounded-lg hover:bg-secondary hover:text-foreground transition-colors"
+                title="Undo changes"
+              >
+                ←
+              </button>
+            )}
+            <button
+              onClick={() => { void loadSessionItems(true); }}
+              className="text-muted-foreground text-[14px] px-2 py-1 rounded-lg hover:bg-secondary hover:text-foreground transition-colors"
+              title="Refresh"
+            >
+              ↻
+            </button>
+          </div>
         </div>
       ) : screen === "profile" ? (
         <div className="shrink-0 px-5 pb-2">
