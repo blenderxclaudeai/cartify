@@ -549,13 +549,41 @@ function extractVariantsFromJsonLd(data: any, sizes: Set<string>, colors: Set<st
   }
 }
 
+// Blocklist: skip elements whose text matches these patterns (legal, policy, footer text)
+const VARIANT_TEXT_BLOCKLIST = /försäljning|villkor|leverans|retur|policy|guide|reviews|faq|kundtjänst|storleksguide|care|details|cookie|shipping|terms|integritet|privacy|conditions|copyright|nyhetsbrev|newsletter|kundservice|customer service|kontakt|contact|om oss|about us/i;
+
+// Elements inside these ancestors are never variant containers
+const EXCLUDED_ANCESTORS = "nav, footer, header, [class*='footer' i], [class*='policy' i], [class*='delivery' i], [class*='cookie' i], [class*='newsletter' i], [class*='legal' i]";
+
+// Product area restriction — only search inside these
+const PRODUCT_AREA_SELECTORS = "main, article, form, [class*='product' i], [id*='product' i], [class*='pdp' i], [id*='pdp' i], section";
+
+function isInsideExcludedArea(el: HTMLElement): boolean {
+  return !!el.closest(EXCLUDED_ANCESTORS);
+}
+
+function isInsideProductArea(el: HTMLElement): boolean {
+  return !!el.closest(PRODUCT_AREA_SELECTORS);
+}
+
+function isValidSizeValue(val: string): boolean {
+  if (val.length > 10) return false;
+  if (VARIANT_TEXT_BLOCKLIST.test(val)) return false;
+  return true;
+}
+
+function isValidColorValue(val: string): boolean {
+  if (val.length > 30) return false;
+  if (VARIANT_TEXT_BLOCKLIST.test(val)) return false;
+  return true;
+}
+
 const SIZE_SELECTORS = [
   "select[name*='size' i]",
   "select[id*='size' i]",
   "select[data-testid*='size' i]",
   "select[aria-label*='size' i]",
   "[data-testid*='size' i] select",
-  "[class*='size' i] select",
 ];
 
 const COLOR_SELECTORS = [
@@ -563,17 +591,17 @@ const COLOR_SELECTORS = [
   "select[id*='color' i]", "select[id*='colour' i]",
   "select[aria-label*='color' i]", "select[aria-label*='colour' i]",
   "[data-testid*='color' i] select", "[data-testid*='colour' i] select",
-  "[class*='color' i] select", "[class*='colour' i] select",
 ];
 
 function extractSizesFromDom(sizes: Set<string>): void {
-  // Select dropdowns
+  // Select dropdowns (these are specific enough — no area restriction needed)
   for (const sel of SIZE_SELECTORS) {
     const elems = document.querySelectorAll<HTMLSelectElement>(sel);
     for (const select of elems) {
+      if (isInsideExcludedArea(select)) continue;
       for (const opt of select.options) {
         const val = opt.text.trim();
-        if (val && !opt.disabled && val !== "" && !/select|choose|pick|välj|wähle/i.test(val)) {
+        if (val && !opt.disabled && val !== "" && !/select|choose|pick|välj|wähle/i.test(val) && isValidSizeValue(val)) {
           sizes.add(val);
         }
       }
@@ -581,30 +609,34 @@ function extractSizesFromDom(sizes: Set<string>): void {
     }
   }
 
-  // Button/radio groups labeled "size"
+  // Button/radio groups — only compound selectors (removed bare [class*='size' i])
   const sizeContainers = document.querySelectorAll<HTMLElement>(
-    "[class*='size' i][class*='selector' i], [class*='size' i][class*='option' i], [class*='size' i][class*='picker' i], [data-testid*='size' i], fieldset[class*='size' i], [role='radiogroup'][aria-label*='size' i], [class*='size' i]"
+    "[class*='size' i][class*='selector' i], [class*='size' i][class*='option' i], [class*='size' i][class*='picker' i], [class*='size' i][class*='list' i], [data-testid*='size' i], fieldset[class*='size' i], [role='radiogroup'][aria-label*='size' i]"
   );
   for (const container of sizeContainers) {
-    const btns = container.querySelectorAll<HTMLElement>("button, [role='radio'], label, a[data-value], li, a");
+    if (isInsideExcludedArea(container)) continue;
+    if (!isInsideProductArea(container)) continue;
+    const btns = container.querySelectorAll<HTMLElement>("button, [role='radio'], label, a[data-value], li");
     for (const btn of btns) {
       const text = (btn.textContent || "").trim();
       const dataValue = btn.getAttribute("data-value")?.trim();
       const val = dataValue || text;
-      if (val && val.length < 20 && !/size guide|storleksguide|storlek|størrelse/i.test(val)) {
+      if (val && isValidSizeValue(val) && !/size guide|storleksguide|størrelse/i.test(val)) {
         sizes.add(val);
       }
     }
     if (sizes.size > 0) return;
   }
 
-  // Broad fallback: any buttons/links with aria-label containing "size"
-  const sizeButtons = document.querySelectorAll<HTMLElement>("[aria-label*='size' i] button, [aria-label*='size' i] a, button[aria-label*='size' i]");
+  // Broad fallback: buttons with aria-label containing "size" — within product area
+  const sizeButtons = document.querySelectorAll<HTMLElement>("[aria-label*='size' i] button, button[aria-label*='size' i]");
   for (const btn of sizeButtons) {
+    if (isInsideExcludedArea(btn)) continue;
+    if (!isInsideProductArea(btn)) continue;
     const text = (btn.textContent || btn.getAttribute("aria-label") || "").trim();
     const dataValue = btn.getAttribute("data-value")?.trim();
     const val = dataValue || text;
-    if (val && val.length < 20) sizes.add(val);
+    if (val && isValidSizeValue(val)) sizes.add(val);
   }
 }
 
@@ -613,9 +645,10 @@ function extractColorsFromDom(colors: Set<string>): void {
   for (const sel of COLOR_SELECTORS) {
     const elems = document.querySelectorAll<HTMLSelectElement>(sel);
     for (const select of elems) {
+      if (isInsideExcludedArea(select)) continue;
       for (const opt of select.options) {
         const val = opt.text.trim();
-        if (val && !opt.disabled && val !== "" && !/select|choose|pick|välj|wähle/i.test(val)) {
+        if (val && !opt.disabled && val !== "" && !/select|choose|pick|välj|wähle/i.test(val) && isValidColorValue(val)) {
           colors.add(val);
         }
       }
@@ -623,33 +656,37 @@ function extractColorsFromDom(colors: Set<string>): void {
     }
   }
 
-  // Button/radio groups labeled "color"
+  // Button/radio groups — only compound selectors (removed bare [class*='color' i] and [class*='colour' i])
   const colorContainers = document.querySelectorAll<HTMLElement>(
-    "[class*='color' i][class*='selector' i], [class*='color' i][class*='option' i], [class*='colour' i][class*='selector' i], [class*='colour' i][class*='option' i], [class*='color' i][class*='picker' i], [data-testid*='color' i], [data-testid*='colour' i], fieldset[class*='color' i], [role='radiogroup'][aria-label*='color' i], [class*='color' i], [class*='colour' i]"
+    "[class*='color' i][class*='selector' i], [class*='color' i][class*='option' i], [class*='colour' i][class*='selector' i], [class*='colour' i][class*='option' i], [class*='color' i][class*='picker' i], [class*='color' i][class*='swatch' i], [data-testid*='color' i], [data-testid*='colour' i], fieldset[class*='color' i], [role='radiogroup'][aria-label*='color' i]"
   );
   for (const container of colorContainers) {
-    const btns = container.querySelectorAll<HTMLElement>("button, [role='radio'], label, a[data-value], li, a");
+    if (isInsideExcludedArea(container)) continue;
+    if (!isInsideProductArea(container)) continue;
+    const btns = container.querySelectorAll<HTMLElement>("button, [role='radio'], label, a[data-value], li");
     for (const btn of btns) {
       const text = (btn.textContent || "").trim();
       const ariaLabel = btn.getAttribute("aria-label")?.trim();
       const title = btn.getAttribute("title")?.trim();
       const dataValue = btn.getAttribute("data-value")?.trim();
       const val = dataValue || ariaLabel || title || text;
-      if (val && val.length < 40) {
+      if (val && isValidColorValue(val)) {
         colors.add(val);
       }
     }
     if (colors.size > 0) return;
   }
 
-  // Broad fallback: any elements with aria-label containing "color"
+  // Broad fallback: buttons with aria-label — within product area
   const colorButtons = document.querySelectorAll<HTMLElement>("[aria-label*='color' i] button, [aria-label*='colour' i] button, button[aria-label*='color' i], button[aria-label*='colour' i]");
   for (const btn of colorButtons) {
+    if (isInsideExcludedArea(btn)) continue;
+    if (!isInsideProductArea(btn)) continue;
     const ariaLabel = btn.getAttribute("aria-label")?.trim();
     const title = btn.getAttribute("title")?.trim();
     const dataValue = btn.getAttribute("data-value")?.trim();
     const val = dataValue || ariaLabel || title || (btn.textContent || "").trim();
-    if (val && val.length < 40) colors.add(val);
+    if (val && isValidColorValue(val)) colors.add(val);
   }
 }
 
