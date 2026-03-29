@@ -474,6 +474,11 @@ export function extractVariants(): ProductVariants {
     extractColorsFromDom(colors);
   }
 
+  // 4. Universal fallback: find any select/radiogroup/fieldset inside product areas
+  if (sizes.size === 0 && colors.size === 0) {
+    extractUniversalFallback(sizes, colors);
+  }
+
   return {
     sizes: Array.from(sizes),
     colors: Array.from(colors),
